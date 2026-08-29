@@ -46,6 +46,38 @@ série. Sem ele o app gera, avalia e melhora imagens normalmente.
 npm start                 # abre a TUI (precisa de um terminal real — usa raw mode)
 ```
 
+## Integração
+
+O Ateliê 0.2.0 também é um motor sem UI, consumível por HTTP ou in-process:
+
+```bash
+atelie --serve --port 4177
+atelie --brief brief.json --json
+```
+
+```ts
+import { criarCliente, criarMotor } from 'atelie/sdk';
+
+const client = criarCliente({ baseUrl: 'http://127.0.0.1:4177' });
+const motor = criarMotor();
+```
+
+A API estável oferece `POST /v1/jobs`, consulta de estado/progresso, catálogo de
+estilos, health, cancelamento e download dos PNGs. O mesmo `brief_hash` devolve o
+mesmo job. Cada artefato recebe um `manifest.json` com prompt final, provedor/modelo,
+parâmetros, histórico dos juízes, SHA-256 e métricas disponíveis.
+
+O brief tem dois modos: `explicacao`, para infográficos com no máximo 12 strings
+curtas e juiz de ortografia/legibilidade; e `cena`, para imagens sem texto destinadas
+a peças. A qualidade padrão da integração é `medium`.
+
+Contratos e exemplos:
+
+- [API HTTP v1](docs/API-V1.md)
+- [Integração AgentHub](docs/INTEGRACAO-AGENTHUB.md)
+- [Integração Macrostudio](docs/INTEGRACAO-MACROSTUDIO.md)
+- `examples/agenthub-explicacao.ts` e `examples/macrostudio-adapter.ts`
+
 ### Subcomandos de debug (não-interativos)
 ```bash
 npm start -- --doctor
@@ -59,6 +91,9 @@ npm start -- --judge-file <png> --request "um gato de óculos lendo jornal" [--s
 | `ATELIE_HOME` | `~/.atelie` | raiz de sessões/saídas |
 | `ATELIE_JUDGE_MODEL` | `sonnet` | modelo do juiz (visão) |
 | `ATELIE_CONCURRENCY` | `0` | jobs de geração em paralelo (`0` = todos de uma vez) |
+| `ATELIE_JOB_CONCURRENCY` | `1` | jobs simultâneos na fila HTTP v1 |
+| `ATELIE_TOKEN` | vazio | token Bearer literal ou `@arquivo` 0600 para rotas v1 |
+| `ATELIE_TOKEN_FILE` | vazio | caminho explícito de arquivo de token 0600 |
 | `ATELIE_AUTO_OPEN` | `1` | abre a pasta publicada ao fim de cada geração (`0` desliga; na CLI, `--no-open`) |
 
 ## Saídas

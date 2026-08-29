@@ -19,6 +19,8 @@ import { capabilityMap, loadSettings, saveSettings, validateRunClis } from '../l
 import { runAuto, type IterationResult, type RunOptions } from '../lib/pipeline';
 import { runSerie, type SerieSpec } from '../lib/serie/serieRun';
 import type { JobResult, PanelVerdict, Session, Settings, Verdict } from '../types';
+import { JobManager } from './jobs';
+import { loadLocalToken, registerV1Routes } from './v1';
 
 // Raiz do repo a partir deste arquivo (src/server → ../.. = repo). UI opcional em ui/dist.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -72,6 +74,21 @@ function runResultJson(session: Session, iterations: IterationResult[], best?: J
     best: best ? { styleId: best.job.styleId, pngPath: best.pngPath ?? null, nota: best.verdict?.nota ?? null } : null,
     durationMs: session.totalDurationMs ?? null,
     estimatedCostUsd: estimateSessionCost(session).usd,
+  };
+}
+
+/** Settings serializáveis sem devolver material secreto ao renderer/HTTP. */
+function publicSettings(settings: Settings) {
+  return {
+    ...settings,
+    openaiApiKey: null,
+    anthropicApiKey: null,
+    googleApiKey: null,
+    apiKeysConfigured: {
+      openai: Boolean(settings.openaiApiKey),
+      anthropic: Boolean(settings.anthropicApiKey),
+      google: Boolean(settings.googleApiKey),
+    },
   };
 }
 
@@ -253,15 +270,16 @@ async function apiRoutes(app: FastifyInstance): Promise<void> {
     '.html': 'text/html; charset=utf-8',
     '.htm': 'text/html; charset=utf-8',
     '.txt': 'text/plain; charset=utf-8',
-    '.json': 'application/json; charset=utf-8',
   };
   app.get('/api/file', async (req, reply) => {
     const raw = (req.query as { path?: string } | undefined)?.path;
     if (typeof raw !== 'string' || !raw.trim()) return reply.code(400).send({ error: 'parâmetro "path" obrigatório' });
     const abs = path.resolve(raw);
-    const rootSep = SESSIONS_ROOT.endsWith(path.sep) ? SESSIONS_ROOT : SESSIONS_ROOT + path.sep;
-    // Barreira de path traversal: só dentro de ~/.atelie.
-    if (abs !== SESSIONS_ROOT && !abs.startsWith(rootSep)) return reply.code(403).send({ error: 'acesso negado: caminho fora de ~/.atelie' });
+    const allowedRoots = ['sessions', 'series', 'jobs'].map((dir) => path.join(SESSIONS_ROOT, dir) + path.sep);
+    // Barreira de path traversal e de segredo: serve somente artefatos das três
+    // árvores conhecidas, nunca config.json, styles.json ou arquivo de token.
+    if (!allowedRoots.some((root) => abs.startsWith(root))) return reply.code(403).send({ error: 'acesso negado: caminho fora das árvores de artefatos' });
+    if (!Object.hasOwn(CONTENT_TYPES, path.extname(abs).toLowerCase())) return reply.code(403).send({ error: 'tipo de arquivo não permitido' });
     let stat: fs.Stats;
     try {
       stat = fs.statSync(abs);
@@ -286,12 +304,23 @@ async function apiRoutes(app: FastifyInstance): Promise<void> {
     return full;
   });
 
-  app.get('/api/settings', async () => loadSettings());
+  app.get('/api/settings', async () => publicSettings(loadSettings()));
 
   app.put('/api/settings', async (req) => {
     const body = (req.body ?? {}) as Partial<Settings>;
-    saveSettings({ ...loadSettings(), ...body } as Settings); // coerce (em saveSettings) valida o merge
-    return loadSettings();
+    const current = loadSettings();
+    // O GET sempre mascara chaves como null; um PUT do formulário completo não
+    // pode apagar o segredo existente por acidente. String não vazia troca a chave.
+    const key = (incoming: string | null | undefined, existing: string | null) =>
+      typeof incoming === 'string' && incoming.trim() ? incoming.trim() : existing;
+    saveSettings({
+      ...current,
+      ...body,
+      openaiApiKey: key(body.openaiApiKey, current.openaiApiKey),
+      anthropicApiKey: key(body.anthropicApiKey, current.anthropicApiKey),
+      googleApiKey: key(body.googleApiKey, current.googleApiKey),
+    } as Settings); // coerce (em saveSettings) valida o merge
+    return publicSettings(loadSettings());
   });
 
   app.get('/api/clis', async () => ({ enabledClis: loadSettings().enabledClis, capabilities: capabilityMap() }));
@@ -330,8 +359,15 @@ async function apiRoutes(app: FastifyInstance): Promise<void> {
 }
 
 /** Monta a instância Fastify (rotas + WS + estático + CORS localhost). Não escuta ainda. */
-export function createServer(): FastifyInstance {
+export interface CreateServerOptions {
+  jobManager?: JobManager;
+  token?: string;
+}
+
+export function createServer(options: CreateServerOptions = {}): FastifyInstance {
   const app = Fastify({ logger: false });
+  const jobs = options.jobManager ?? new JobManager();
+  const token = options.token ?? loadLocalToken();
 
   // CORS liberado só p/ origens localhost (o bind já é 127.0.0.1, então é a fundo dupla).
   app.addHook('onRequest', async (req, reply) => {
@@ -340,14 +376,15 @@ export function createServer(): FastifyInstance {
     if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
       reply.header('Access-Control-Allow-Origin', origin);
       reply.header('Vary', 'Origin');
-      reply.header('Access-Control-Allow-Methods', 'GET,PUT,POST,OPTIONS');
-      reply.header('Access-Control-Allow-Headers', 'content-type');
+      reply.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+      reply.header('Access-Control-Allow-Headers', 'content-type,authorization');
     }
   });
   app.options('/*', async (_req, reply) => reply.code(204).send());
 
   app.register(fastifyWebsocket);
   app.register(apiRoutes);
+  app.register(registerV1Routes, { jobs, token });
 
   if (fs.existsSync(UI_DIST)) {
     app.register(fastifyStatic, { root: UI_DIST, prefix: '/' });
@@ -362,8 +399,8 @@ export function createServer(): FastifyInstance {
 }
 
 /** Sobe o servidor em 127.0.0.1 (porta efêmera se omitida) e devolve URL + close(). */
-export async function startServer(port?: number): Promise<{ url: string; port: number; close: () => Promise<void> }> {
-  const app = createServer();
+export async function startServer(port?: number, options: CreateServerOptions = {}): Promise<{ url: string; port: number; close: () => Promise<void> }> {
+  const app = createServer(options);
   // Antes de aceitar tráfego: alinhar as feature-flags ao que existe na máquina,
   // para uma instalação sem Claude Code não julgar com um provedor inexistente.
   const desligadas = await desligarClisAusentes();

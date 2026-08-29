@@ -21,6 +21,9 @@ import { generatePanel } from './lib/serie/panel';
 import { runSerie, type SerieSpec } from './lib/serie/serieRun';
 import { appendSerie, createSerie, ensureSerie, listSeries, loadSerie, saveSerie, serieDir } from './lib/serie/store';
 import { SessionLogger } from './lib/logger';
+import { criarMotor } from './lib/motor';
+import { normalizeBrief } from './lib/brief';
+import { startServer } from './server/server';
 import { append, readSnapshot, sessionDir, writeSnapshot } from './state/manifest';
 import type { Canon, GenJob, GenProviderId, JobResult, JudgeSpec, LogEntry, Painel, Personagem, Serie, Session, Verdict } from './types';
 
@@ -30,6 +33,8 @@ const cli = meow(
     $ atelie                          abre a TUI
 
   Esteira headless
+    --brief <brief.json|json> [--json] gera um brief estruturado pelo motor integrável
+    --serve [--port <N>]              sobe a API HTTP local (/v1/* e /api/*)
     --run --prompt "<txt>" --styles a,b,c --versions <N|"estilo=N,outro=M"> [--quality low|medium|high] [--iterate <M>] [--json]
                                       gera N versões de cada estilo, julga, escolhe best; --iterate auto-melhora
       [--judge-mode painel|unico] [--judge-models "claude:opus,codex:gpt-5.6-sol"]
@@ -102,6 +107,9 @@ const cli = meow(
       aspect: { type: 'string' },
       batch: { type: 'string' },
       contactSheet: { type: 'string' },
+      brief: { type: 'string' },
+      serve: { type: 'boolean', default: false },
+      port: { type: 'number' },
       // série
       titulo: { type: 'string' },
       estilo: { type: 'string' },
@@ -953,6 +961,39 @@ async function main(): Promise<void> {
 
   // ── Modalidade Série (posicional): despacha ANTES do roteamento de flags ───
   if (cli.input[0] === 'serie') return cmdSerie(cli.input.slice(1), f);
+
+  // ── Motor integrável / API v1 ───────────────────────────────────────────
+  if (f.serve) {
+    const server = await startServer(f.port);
+    const close = () => server.close().finally(() => process.exit(0));
+    process.once('SIGINT', close);
+    process.once('SIGTERM', close);
+    return;
+  }
+  if (f.brief) {
+    let raw: unknown;
+    try {
+      const source = fs.existsSync(f.brief) ? fs.readFileSync(f.brief, 'utf8') : f.brief;
+      raw = JSON.parse(source);
+    } catch {
+      fail(`não foi possível ler o brief JSON: ${f.brief}`);
+      return;
+    }
+    try {
+      const brief = normalizeBrief(raw);
+      const result = await criarMotor().gerar(brief, {
+        onProgress: (p) => process.stderr.write(`[${p.concluidos}/${p.total}] ${p.etapa}: ${p.mensagem}\n`),
+      });
+      if (f.json) console.log(JSON.stringify(result));
+      else {
+        console.log(`Job ${result.jobId} · ${result.verdict.aprovado ? '✓ aprovado' : '✗ reprovado'} · nota ${result.verdict.nota ?? '—'}`);
+        for (const artifact of result.artifacts) console.log(`  ${artifact.n}. ${artifact.pngPath}\n     recibo: ${artifact.manifestPath}`);
+      }
+    } catch (error: any) {
+      fail(String(error?.message ?? error));
+    }
+    return;
+  }
 
   // ── --doctor ────────────────────────────────────────────────────────────
   if (f.doctor) {

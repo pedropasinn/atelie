@@ -6,6 +6,10 @@ todos os caminhos são absolutos (sessões em `~/.atelie/`). Sempre use `--json`
 ## Receitas
 
 ```bash
+# motor integrável: brief estruturado e API HTTP v1
+atelie --brief brief.json --json
+atelie --serve --port 4177
+
 # saúde do backend + auth do Codex
 atelie --doctor
 
@@ -45,6 +49,10 @@ atelie --contact-sheet <id>
 atelie --gen-one --style pixel-art --prompt "..." --quality low       # gera 1 e imprime o caminho
 atelie --judge-file <png> --request "..." [--style <id>] [--model sonnet]
 ```
+
+O SDK TypeScript está em `atelie/sdk`; o contrato HTTP e o schema do brief estão em
+`docs/API-V1.md`. Testes e integrações devem injetar provedor fake no `criarMotor`,
+sem gerar imagens reais.
 
 ## Forma do JSON de `--run`
 `{sessionId, dir, request, versionsPerStyle, iterations:[{iteration, durationMs, results:[{styleId,index,pngPath,ok,verdict:{nota,aprovado,alinhamento,problemas[],sugestao_melhoria,prompt_sugerido,painel?:[{provider,model,nota,aprovado}]}}], best}], best:{styleId,pngPath,nota}, durationMs}`.
