@@ -138,9 +138,11 @@ function splitCsv(v?: string): string[] {
   return v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [];
 }
 
-/** Só existe um provedor de geração (codex); a flag é aceita por compat. */
-function parseGenProvider(_v?: string): GenProviderId | undefined {
-  return 'codex';
+/** Só existe um provedor de geração; ids desconhecidos são erro explícito. */
+function parseGenProvider(value?: string): GenProviderId | undefined {
+  if (value == null || !value.trim()) return undefined;
+  if (value.trim() === 'codex') return 'codex';
+  throw new Error(`provedor de geração desconhecido: "${value.trim()}"; use "codex"`);
 }
 
 /**

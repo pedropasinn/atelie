@@ -42,13 +42,16 @@ de `atelie/sdk`; nenhuma mudança no Macrostudio é necessária nesta entrega.
 
 | `IdSuporte` | brief `tamanho` | leitura |
 |---|---:|---|
-| `reels`, `corte` | `1536x2048` | retrato 9:16 aproximado |
+| `reels`, `corte` | `1152x2048` | 9:16 exato |
 | `paisagem` | `2048x1152` | 16:9 |
-| `card` | `1536x2048` | retrato 4:5 aproximado |
+| `card` | `1280x1600` | 4:5 exato |
 | `post` | `2048x2048` | quadrado |
 
-O backend Codex trata tamanho como dica; o adapter deve enquadrar/cortar no pipeline
-da peça antes do Remotion quando a dimensão exata for obrigatória.
+O wrapper instalado [`gpt-image-2-skill` 0.7.3](https://github.com/Wangnov/gpt-image-2-skill/tree/v0.7.3) aceita `WIDTHxHEIGHT` customizado com
+lados múltiplos de 16, razão máxima 3:1 e até 8.294.400 pixels; portanto os tamanhos
+acima são pedidos válidos e não convertem 9:16 em 3:4. O backend Codex ainda trata o
+tamanho como dica: o adapter deve conferir `manifest.arquivo.dimensoes` e só então
+enquadrar no pipeline da peça quando a dimensão final divergir.
 
 ## Gate
 

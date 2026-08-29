@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { StructuredBrief } from './brief';
+import { overlayLabels, type OverlayLabel, type StructuredBrief } from './brief';
 import type { Verdict } from '../types';
+import { ATELIE_VERSION } from '../version';
 
 export const MANIFEST_SCHEMA = 'atelie.provenance/v1' as const;
 
@@ -18,6 +19,9 @@ export interface ProvenanceVerdict {
   sugestao_melhoria: string;
   prompt_sugerido: string;
   juiz?: { provider: string; model: string };
+  duracao_ms: number;
+  geracao_ms: number;
+  julgamento_ms: number;
 }
 
 export interface ArtifactManifest {
@@ -26,19 +30,41 @@ export interface ArtifactManifest {
   job_id: string;
   brief_hash: string;
   criado_em: string;
+  atelie_versao: string;
   prompt_final: string;
   estilo: { id: string; nome: string };
   provedor: { id: string; modelo: string };
   parametros: {
     modo: 'explicacao' | 'cena';
+    provedor_solicitado: 'codex';
+    texto_fora_da_imagem: boolean;
     tamanho: string;
     qualidade: 'low' | 'medium' | 'high';
     idioma: 'pt-BR';
     referencias: Array<{ nome: string; sha256?: string }>;
   };
+  rotulos_overlay: OverlayLabel[];
   vereditos: ProvenanceVerdict[];
-  arquivo: { nome: string; mime: 'image/png'; sha256: string; bytes: number };
-  metricas: { duracao_ms: number; custo_usd?: number };
+  arquivo: { nome: string; mime: 'image/png'; sha256: string; bytes: number; dimensoes: { largura: number; altura: number } };
+  metricas: { duracao_ms: number; custo_usd: number; custo_tipo: 'estimativa' | 'informado'; custo_fonte: string };
+}
+
+export function pngDimensions(file: string): { largura: number; altura: number } {
+  const fd = fs.openSync(file, 'r');
+  const header = Buffer.alloc(24);
+  try {
+    const bytes = fs.readSync(fd, header, 0, header.length, 0);
+    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    if (bytes < 24 || !header.subarray(0, 8).equals(signature) || header.toString('ascii', 12, 16) !== 'IHDR') {
+      throw new Error('artefato final não é um PNG com IHDR válido');
+    }
+    const largura = header.readUInt32BE(16);
+    const altura = header.readUInt32BE(20);
+    if (!largura || !altura) throw new Error('artefato final tem dimensões PNG inválidas');
+    return { largura, altura };
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 export function sha256File(file: string): string {
@@ -74,6 +100,7 @@ export function provenanceVerdict(
   verdict: Verdict,
   judge?: { provider: string; model: string },
   at = new Date().toISOString(),
+  durations: { totalMs: number; generationMs: number; judgmentMs: number } = { totalMs: 0, generationMs: 0, judgmentMs: 0 },
 ): ProvenanceVerdict {
   return {
     tentativa,
@@ -86,6 +113,9 @@ export function provenanceVerdict(
     sugestao_melhoria: verdict.sugestao_melhoria,
     prompt_sugerido: verdict.prompt_sugerido,
     juiz: judge,
+    duracao_ms: Math.max(0, Math.round(durations.totalMs)),
+    geracao_ms: Math.max(0, Math.round(durations.generationMs)),
+    julgamento_ms: Math.max(0, Math.round(durations.judgmentMs)),
   };
 }
 
@@ -100,31 +130,40 @@ export function createArtifactManifest(input: {
   verdicts: ProvenanceVerdict[];
   pngPath: string;
   durationMs: number;
-  costUsd?: number;
+  costUsd: number;
+  costType: 'estimativa' | 'informado';
+  costSource: string;
   createdAt?: string;
 }): ArtifactManifest {
   const stat = fs.statSync(input.pngPath);
+  const dimensoes = pngDimensions(input.pngPath);
   return {
     schema: MANIFEST_SCHEMA,
     artifact_id: input.artifactId,
     job_id: input.jobId,
     brief_hash: input.briefHash,
     criado_em: input.createdAt ?? new Date().toISOString(),
+    atelie_versao: ATELIE_VERSION,
     prompt_final: input.finalPrompt,
     estilo: input.style,
     provedor: { id: input.provider.id, modelo: input.provider.model },
     parametros: {
       modo: input.brief.modo ?? 'explicacao',
+      provedor_solicitado: input.brief.provedor ?? 'codex',
+      texto_fora_da_imagem: input.brief.texto_fora_da_imagem === true,
       tamanho: input.brief.tamanho,
       qualidade: input.brief.qualidade,
       idioma: input.brief.idioma,
       referencias: referenceReceipts(input.brief.refs),
     },
+    rotulos_overlay: input.brief.texto_fora_da_imagem ? overlayLabels(input.brief) : [],
     vereditos: input.verdicts,
-    arquivo: { nome: path.basename(input.pngPath), mime: 'image/png', sha256: sha256File(input.pngPath), bytes: stat.size },
+    arquivo: { nome: path.basename(input.pngPath), mime: 'image/png', sha256: sha256File(input.pngPath), bytes: stat.size, dimensoes },
     metricas: {
       duracao_ms: Math.max(0, Math.round(input.durationMs)),
-      ...(input.costUsd == null ? {} : { custo_usd: input.costUsd }),
+      custo_usd: input.costUsd,
+      custo_tipo: input.costType,
+      custo_fonte: input.costSource,
     },
   };
 }

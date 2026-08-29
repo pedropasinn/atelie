@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1 — 2026-08-29
+
+- corrige idempotência de jobs falhos com retry transitório configurável, `retry`,
+  `force` e expiração por TTL;
+- canonicaliza `estilo`/`estilos`, valida estilos antes da fila e recusa provedores
+  desconhecidos sem fallback silencioso;
+- completa a proveniência com versão, dimensões PNG reais, duração por tentativa e
+  custo estimado por tabela configurável;
+- protege `/api/*` e `/api/ws` com o mesmo token da API v1 e tolera DELETE JSON vazio;
+- adiciona `texto_fora_da_imagem` e `rotulos_overlay` para composição determinística
+  de texto em HTML/SVG;
+- corrige as proporções do adapter Macrostudio e inclui `examples/` no typecheck.
+
 ## 0.2.0 — 2026-08-29
 
 - adiciona motor in-process e SDK TypeScript exportado por `atelie/sdk`;

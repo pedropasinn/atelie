@@ -15,8 +15,12 @@ export interface StructuredBrief {
   titulo: string;
   objetivo: string;
   modo?: BriefMode;
+  /** Único provedor de geração implementado nesta versão. */
+  provedor?: 'codex';
   estilo?: string;
   estilos?: string[];
+  /** Em explicações, gera só a camada visual e devolve os rótulos no manifest. */
+  texto_fora_da_imagem?: boolean;
   secoes: BriefSection[];
   legendas_curtas: boolean;
   idioma: 'pt-BR';
@@ -33,7 +37,15 @@ export interface ComposedBrief {
   brief: StructuredBrief;
   prompt: string;
   stringsVisiveis: string[];
+  rotulosOverlay: OverlayLabel[];
   avisos: string[];
+}
+
+export interface OverlayLabel {
+  id: string;
+  tipo: 'titulo' | 'secao' | 'item';
+  texto: string;
+  secao?: number;
 }
 
 const MAX_VISIBLE_STRINGS = 12;
@@ -54,6 +66,10 @@ export function normalizeBrief(value: unknown): StructuredBrief {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('brief inválido: esperado um objeto JSON');
   const raw = value as Record<string, unknown>;
   const modo: BriefMode = raw.modo === 'cena' ? 'cena' : 'explicacao';
+  const requestedProvider = raw.provedor ?? raw.provider;
+  if (requestedProvider != null && requestedProvider !== 'codex') {
+    throw new Error(`brief inválido: provedor "${String(requestedProvider)}" não é suportado; use "codex"`);
+  }
   const qualidade: BriefQuality = raw.qualidade === 'low' || raw.qualidade === 'high' ? raw.qualidade : 'medium';
   const idioma = raw.idioma == null ? 'pt-BR' : raw.idioma;
   if (idioma !== 'pt-BR') throw new Error('brief inválido: somente idioma "pt-BR" é suportado nesta versão');
@@ -69,8 +85,8 @@ export function normalizeBrief(value: unknown): StructuredBrief {
   });
 
   const estilo = typeof raw.estilo === 'string' && raw.estilo.trim() ? raw.estilo.trim() : undefined;
-  const estilos = stringArray(raw.estilos);
-  if (!estilo && !estilos.length) throw new Error('brief inválido: informe "estilo" ou "estilos"');
+  const estilos = [...new Set([...(estilo ? [estilo] : []), ...stringArray(raw.estilos)])].sort();
+  if (!estilos.length) throw new Error('brief inválido: informe "estilo" ou "estilos"');
 
   const paleta = raw.paleta && typeof raw.paleta === 'object' && !Array.isArray(raw.paleta)
     ? Object.fromEntries(Object.entries(raw.paleta as Record<string, unknown>)
@@ -87,8 +103,9 @@ export function normalizeBrief(value: unknown): StructuredBrief {
     titulo,
     objetivo: requiredString(raw.objetivo, 'objetivo'),
     modo,
-    estilo,
+    provedor: 'codex',
     estilos,
+    texto_fora_da_imagem: modo === 'explicacao' && raw.texto_fora_da_imagem === true,
     secoes,
     legendas_curtas: raw.legendas_curtas !== false,
     idioma: 'pt-BR',
@@ -102,7 +119,18 @@ export function normalizeBrief(value: unknown): StructuredBrief {
 }
 
 export function briefStyles(brief: StructuredBrief): string[] {
-  return [...new Set([...(brief.estilo ? [brief.estilo] : []), ...(brief.estilos ?? [])])];
+  return [...new Set([...(brief.estilo ? [brief.estilo] : []), ...(brief.estilos ?? [])])].sort();
+}
+
+export function overlayLabels(brief: StructuredBrief): OverlayLabel[] {
+  const labels: OverlayLabel[] = [{ id: 'titulo', tipo: 'titulo', texto: brief.titulo }];
+  brief.secoes.forEach((section, sectionIndex) => {
+    labels.push({ id: `secao-${sectionIndex + 1}`, tipo: 'secao', texto: section.rotulo, secao: sectionIndex + 1 });
+    section.itens.forEach((item, itemIndex) => {
+      labels.push({ id: `secao-${sectionIndex + 1}-item-${itemIndex + 1}`, tipo: 'item', texto: item, secao: sectionIndex + 1 });
+    });
+  });
+  return labels;
 }
 
 function quote(text: string): string {
@@ -121,19 +149,23 @@ function paletteInstruction(palette?: Record<string, string>): string {
 export function composeBriefPrompt(value: unknown, style: StyleDef): ComposedBrief {
   const brief = normalizeBrief(value);
   const avisos: string[] = [];
-  if (brief.modo === 'cena') {
+  if (brief.modo === 'cena' || brief.texto_fora_da_imagem) {
     const concepts = brief.secoes.flatMap((s) => [s.rotulo, ...s.itens]).join('; ');
     const request = [
       brief.objetivo,
       concepts ? `Elementos da cena: ${concepts}.` : '',
       paletteInstruction(brief.paleta),
-      'Imagem puramente visual para uma peça/cena. Não renderize texto, letras, números, legendas, logotipos ou marcas-d’água.',
+      brief.modo === 'cena'
+        ? 'Imagem puramente visual para uma peça/cena.'
+        : 'Camada visual de uma explicação; reserve composição e áreas livres para o consumidor aplicar os rótulos depois.',
+      'Não renderize texto, letras, números, legendas, logotipos ou marcas-d’água.',
     ].filter(Boolean).join(' ');
     const styled = compose(request, style, undefined, { avoid: [...brief.negativos, 'texto', 'letras', 'logotipos', 'marca-d’água'].join(', ') });
     return {
       brief,
-      prompt: `${styled} REGRA PRIORITÁRIA DO MODO CENA: zero texto visível; ignore qualquer sugestão do estilo sobre títulos, rótulos, números ou tipografia.`,
+      prompt: `${styled} REGRA PRIORITÁRIA: zero texto visível; ignore qualquer sugestão do estilo sobre títulos, rótulos, números ou tipografia.`,
       stringsVisiveis: [],
+      rotulosOverlay: brief.texto_fora_da_imagem ? overlayLabels(brief) : [],
       avisos,
     };
   }
@@ -169,6 +201,7 @@ export function composeBriefPrompt(value: unknown, style: StyleDef): ComposedBri
     brief,
     prompt: compose(request, style, undefined, { avoid: [...brief.negativos, 'microtexto', 'texto ilegível', 'caracteres inventados'].join(', ') }),
     stringsVisiveis,
+    rotulosOverlay: [],
     avisos,
   };
 }
@@ -189,7 +222,7 @@ export function briefHash(value: unknown): string {
 }
 
 export function buildLegibilityRubric(composed: ComposedBrief, threshold = 7): string {
-  const textRule = composed.brief.modo === 'cena'
+  const textRule = composed.brief.modo === 'cena' || composed.brief.texto_fora_da_imagem
     ? 'A imagem deve conter ZERO texto. Reprove se houver letras, números, pseudotexto, logotipo ou marca-d’água.'
     : `Confira literalmente estas strings: ${composed.stringsVisiveis.map(quote).join(', ')}. Reprove se qualquer uma estiver ilegível, ausente quando central, com ortografia/acentuação errada ou se houver pseudotexto/microtexto não pedido.`;
   return [

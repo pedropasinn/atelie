@@ -20,7 +20,7 @@ import { runAuto, type IterationResult, type RunOptions } from '../lib/pipeline'
 import { runSerie, type SerieSpec } from '../lib/serie/serieRun';
 import type { JobResult, PanelVerdict, Session, Settings, Verdict } from '../types';
 import { JobManager } from './jobs';
-import { loadLocalToken, registerV1Routes } from './v1';
+import { authorize, loadLocalToken, registerV1Routes } from './v1';
 
 // Raiz do repo a partir deste arquivo (src/server → ../.. = repo). UI opcional em ui/dist.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -124,6 +124,10 @@ async function handleRun(payload: any, runId: string, send: Send): Promise<void>
   }
 
   const settings = loadSettings();
+  if (payload?.genProvider != null && payload.genProvider !== 'codex') {
+    send({ type: 'error', runId, message: `provedor de geração desconhecido: "${String(payload.genProvider)}"` });
+    return;
+  }
   const genProvider = payload?.genProvider === 'codex' ? payload.genProvider : undefined;
   const judgeMode = payload?.judgeMode === 'painel' || payload?.judgeMode === 'unico' ? payload.judgeMode : undefined;
 
@@ -238,7 +242,11 @@ function attachWs(socket: WsSocket): void {
 }
 
 // ── Rotas /api (plugin registrado APÓS o @fastify/websocket) ─────────────────
-async function apiRoutes(app: FastifyInstance): Promise<void> {
+async function apiRoutes(app: FastifyInstance, options: { token?: string }): Promise<void> {
+  app.addHook('preValidation', async (request, reply) => {
+    if (!authorize(options.token, request, reply)) return reply;
+  });
+
   app.get('/api/health', async () => ({ ok: true }));
 
   app.get('/api/doctor', async () => checkEnvironment());
@@ -306,8 +314,11 @@ async function apiRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/settings', async () => publicSettings(loadSettings()));
 
-  app.put('/api/settings', async (req) => {
+  app.put('/api/settings', async (req, reply) => {
     const body = (req.body ?? {}) as Partial<Settings>;
+    if (body.genProvider != null && body.genProvider !== 'codex') {
+      return reply.code(400).send({ error: `provedor de geração desconhecido: "${String(body.genProvider)}"` });
+    }
     const current = loadSettings();
     // O GET sempre mascara chaves como null; um PUT do formulário completo não
     // pode apagar o segredo existente por acidente. String não vazia troca a chave.
@@ -369,6 +380,21 @@ export function createServer(options: CreateServerOptions = {}): FastifyInstance
   const jobs = options.jobManager ?? new JobManager();
   const token = options.token ?? loadLocalToken();
 
+  // Clientes que fixam Content-Type em DELETE podem enviar corpo vazio. O parser
+  // mantém JSON normal para as demais rotas e tolera especificamente esse vazio.
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_request, body, done) => {
+    const text = String(body);
+    if (!text.trim()) return done(null, undefined);
+    try {
+      done(null, JSON.parse(text));
+    } catch (error) {
+      const parseError = error as Error & { statusCode?: number };
+      parseError.statusCode = 400;
+      done(parseError, undefined);
+    }
+  });
+
   // CORS liberado só p/ origens localhost (o bind já é 127.0.0.1, então é a fundo dupla).
   app.addHook('onRequest', async (req, reply) => {
     if (req.headers.upgrade) return; // handshake de upgrade do WS não usa reply
@@ -383,7 +409,7 @@ export function createServer(options: CreateServerOptions = {}): FastifyInstance
   app.options('/*', async (_req, reply) => reply.code(204).send());
 
   app.register(fastifyWebsocket);
-  app.register(apiRoutes);
+  app.register(apiRoutes, { token });
   app.register(registerV1Routes, { jobs, token });
 
   if (fs.existsSync(UI_DIST)) {

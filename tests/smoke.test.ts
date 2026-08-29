@@ -98,8 +98,9 @@ async function main(): Promise<void> {
   // ── genProviders: só existe codex ──────────────────────────────────
   ok(resolveGenProvider('codex', 'transparent').id === 'codex', 'transparent → codex');
   ok(resolveGenProvider(undefined, 'edit').id === 'codex', 'edit → codex');
-  ok(getGenProvider('qualquer-coisa').id === 'codex', 'provedor desconhecido → codex');
-  ok(getGenProvider('inexistente').id === 'codex', 'provider desconhecido → codex');
+  let unknownProviderRejected = false;
+  try { getGenProvider('qualquer-coisa'); } catch { unknownProviderRejected = true; }
+  ok(unknownProviderRejected, 'provedor desconhecido é recusado');
 
   // ── imageFormat.detectImageFormat ──────────────────────────────────
   const pf = path.join(HOME, 'a.png');

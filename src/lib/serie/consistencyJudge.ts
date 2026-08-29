@@ -64,7 +64,7 @@ function buildBytesRubric(canon: Canon, cena: string, k: number): string {
  * Juiz de consistência multi-imagem: recebe as âncoras (refs) + o painel candidato,
  * pontua consistência (personagem/estilo) e fidelidade à cena, e devolve drifts
  * concretos + sugestão/prompt corretivos. Reusa o transporte multi-imagem
- * (askImagesRaw) — claude N blocos image, codex N input_image, agy N caminhos.
+ * (askImagesRaw) — claude usa N blocos image e codex usa N input_image.
  */
 export async function judgeConsistency(
   refs: string[],

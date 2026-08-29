@@ -9,6 +9,7 @@ const brief: StructuredBrief = {
   titulo: 'RELATÓRIO EM UMA PÁGINA',
   objetivo: 'Explicar o caminho de uma solicitação até a decisão auditável.',
   modo: 'explicacao',
+  texto_fora_da_imagem: true,
   estilo: 'infografico-bento',
   secoes: [
     { rotulo: 'ENTRADA', itens: ['pedido', 'limites'] },
@@ -31,5 +32,5 @@ if (completed.status !== 'completed') throw new Error(`Ateliê terminou em ${com
 const png = await atelie.artifact(completed.id, 1);
 const receipt = completed.resultado?.artefatos[0]?.manifest;
 
-// O AgentHub pode anexar `png` como artefato e registrar `receipt` no evento.
-console.log(JSON.stringify({ jobId: completed.id, bytes: png.byteLength, receipt }, null, 2));
+// O AgentHub compõe receipt.rotulos_overlay em HTML/SVG sobre o PNG sem texto.
+console.log(JSON.stringify({ jobId: completed.id, bytes: png.byteLength, rotulos: receipt?.rotulos_overlay, receipt }, null, 2));

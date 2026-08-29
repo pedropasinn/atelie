@@ -113,7 +113,7 @@ export async function judge(
 ): Promise<Verdict> {
   const threshold = approveThreshold ?? loadSettings().approveThreshold;
   const b64 = fs.readFileSync(pngPath).toString('base64');
-  // Detecta o media_type real (o agy pode ter salvo JPEG) em vez de fixar PNG.
+  // Detecta o media_type real em vez de confiar na extensão do arquivo.
   const { mime } = detectImageFormat(pngPath);
   const imgBlock: ClaudeBlock = {
     type: 'image',

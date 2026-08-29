@@ -3,7 +3,7 @@ import path from 'path';
 import { CONFIG_FILE } from '../config';
 import type { CliId, GenProviderId, JudgeSpec, Settings } from '../types';
 
-/** Modelos de juiz padrão (só Anthropic + OpenAI; o agy foi removido). */
+/** Modelos de juiz padrão (Anthropic + OpenAI). */
 export const CLAUDE_JUDGE_MODEL = 'opus';
 export const CODEX_JUDGE_MODEL = 'gpt-5.6-sol';
 
@@ -86,6 +86,9 @@ function coerce(raw: any): Settings {
     }
     return fb;
   };
+  if (raw.genProvider != null && raw.genProvider !== 'codex') {
+    throw new Error(`provedor de geração desconhecido nas configurações: "${String(raw.genProvider)}"`);
+  }
   const genProvider: GenProviderId = 'codex';
   const judgeMode: Settings['judgeMode'] = raw.judgeMode === 'unico' || raw.judgeMode === 'painel' ? raw.judgeMode : d.judgeMode;
   const authMode: Settings['authMode'] = raw.authMode === 'apikey' || raw.authMode === 'auto' || raw.authMode === 'cli' ? raw.authMode : d.authMode;
@@ -126,12 +129,14 @@ function coerce(raw: any): Settings {
 
 /** Lê config.json; merge com defaults; tolera arquivo ausente/corrompido. */
 export function loadSettings(): Settings {
+  let raw: unknown;
   try {
     const txt = fs.readFileSync(CONFIG_FILE, 'utf8');
-    return coerce(JSON.parse(txt));
+    raw = JSON.parse(txt);
   } catch {
     return defaults();
   }
+  return coerce(raw);
 }
 
 export function saveSettings(s: Settings): void {

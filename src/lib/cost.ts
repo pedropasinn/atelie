@@ -11,6 +11,67 @@ import type { PanelVerdict, Session, Verdict } from '../types';
 
 type JudgeProvider = 'claude' | 'codex';
 
+export type ImageOrientation = 'square' | 'portrait' | 'landscape';
+export interface ImagePriceTable {
+  low: Record<ImageOrientation, number>;
+  medium: Record<ImageOrientation, number>;
+  high: Record<ImageOrientation, number>;
+}
+
+export interface ImageCostEstimate {
+  usd: number;
+  tipo: 'estimativa';
+  fonte: string;
+}
+
+/**
+ * Proxy por saída, baseado na referência equivalente de API em 2026-08-29.
+ * Não representa cobrança do canal Codex/ChatGPT. O operador pode substituir a
+ * tabela inteira com ATELIE_IMAGE_PRICE_TABLE_JSON.
+ */
+export const DEFAULT_IMAGE_PRICE_TABLE: ImagePriceTable = {
+  low: { square: 0.004, portrait: 0.005, landscape: 0.005 },
+  medium: { square: 0.032, portrait: 0.05, landscape: 0.05 },
+  high: { square: 0.11, portrait: 0.165, landscape: 0.165 },
+};
+
+function validPrice(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+export function loadImagePriceTable(env: NodeJS.ProcessEnv = process.env): { table: ImagePriceTable; source: string } {
+  const raw = env.ATELIE_IMAGE_PRICE_TABLE_JSON?.trim();
+  if (!raw) return { table: DEFAULT_IMAGE_PRICE_TABLE, source: 'tabela-padrao-atelie-2026-08-29' };
+  try {
+    const parsed = JSON.parse(raw) as Partial<Record<keyof ImagePriceTable, Partial<Record<ImageOrientation, unknown>>>>;
+    const table = structuredClone(DEFAULT_IMAGE_PRICE_TABLE);
+    for (const quality of ['low', 'medium', 'high'] as const) {
+      for (const orientation of ['square', 'portrait', 'landscape'] as const) {
+        table[quality][orientation] = validPrice(parsed[quality]?.[orientation], table[quality][orientation]);
+      }
+    }
+    return { table, source: 'ATELIE_IMAGE_PRICE_TABLE_JSON' };
+  } catch {
+    return { table: DEFAULT_IMAGE_PRICE_TABLE, source: 'tabela-padrao-atelie-2026-08-29 (override inválido ignorado)' };
+  }
+}
+
+function imageOrientation(size: string): ImageOrientation {
+  const alias = size.trim().toLowerCase();
+  if (alias === 'portrait') return 'portrait';
+  if (alias === 'landscape' || alias === 'wide') return 'landscape';
+  const match = /^(\d+)x(\d+)$/i.exec(size.trim());
+  if (!match) return 'square';
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return width === height ? 'square' : width < height ? 'portrait' : 'landscape';
+}
+
+export function estimateImageCost(quality: 'low' | 'medium' | 'high', size: string, env: NodeJS.ProcessEnv = process.env): ImageCostEstimate {
+  const { table, source } = loadImagePriceTable(env);
+  return { usd: table[quality][imageOrientation(size)], tipo: 'estimativa', fonte: source };
+}
+
 // Custo aprox. por imagem gpt-image-2 (Codex) a ~1024², por qualidade.
 const CODEX_BASE_USD: Record<string, number> = { low: 0.02, medium: 0.07, high: 0.19 };
 

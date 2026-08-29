@@ -12,7 +12,7 @@ Comparação para ESTE projeto (motor 100% Node + CLIs Node/Go):
 
 | Opção | Prós p/ nós | Contras | Veredito |
 |---|---|---|---|
-| **Electron** ⭐ | Main process É Node → o motor roda **in-process**, sem ponte p/ runtime estranho; `child_process` p/ codex/claude/agy nativo; **electron-updater** (auto-update GitHub) maduro; **electron-builder** gera NSIS/DMG/AppImage; ecossistema enorme | Binário ~110–140MB, mais RAM | **Escolhido** |
+| **Electron** ⭐ | Main process É Node → o motor roda **in-process**, sem ponte p/ runtime estranho; `child_process` p/ codex/claude nativo; **electron-updater** (auto-update GitHub) maduro; **electron-builder** gera NSIS/DMG/AppImage; ecossistema enorme | Binário ~110–140MB, mais RAM | **Escolhido** |
 | Tauri | Binário ~10MB, seguro | Core é **Rust** ≠ nosso motor Node → teria que embarcar Node como *sidecar* e fazer ponte Rust↔Node (plumbing extra); updater mais manual. Só valeria se reescrevêssemos em Rust (não é o caso) | Rejeitado |
 | Node server + navegador do usuário (pkg/nexe) | Mais leve, "abre no navegador" nativo, casa com o pedido "sobe localhost" | Sem janela/tray/auto-update polidos; sente menos "app" | **Fase 0 (MVP)** e fallback |
 | Wails(Go)/Flutter/Python(pywebview) | — | Exigem reescrever/pontear o motor Node | Rejeitado |
@@ -30,7 +30,7 @@ nos dois — o Electron só adiciona a casca de distribuição.
 │   • Servidor local Fastify + WebSocket em 127.0.0.1:<porta aleatória>   │
 │       REST: /doctor /run /serie /sessions /styles /settings /clis       │
 │       WS:   stream de log/progress/tentativas (onLog/onProgress → WS)   │
-│   • spawn das CLIs externas (codex/claude/agy) via child_process        │
+│   • spawn das CLIs externas (codex/claude) via child_process            │
 │   • electron-updater (feed = GitHub Releases)  • tray + deep-link       │
 │  RENDERER (Chromium) — UI WEB (React/Vite):                            │
 │   • Dashboard, Doctor, Criar, Série, Sessões, Galeria, Config, CLIs     │
@@ -38,7 +38,7 @@ nos dois — o Electron só adiciona a casca de distribuição.
 └─────────────────────────────────────────────────────────────────────────┘
      │ spawn                          persistência
      ▼                                     ▼
- codex(wrapper gpt-image-2) · claude · agy      ~/.atelie (sessions/series/settings/styles)
+ codex(wrapper gpt-image-2) · claude            ~/.atelie (sessions/series/settings/styles)
  (CLIs + assinaturas do usuário)
 ```
 
@@ -59,16 +59,16 @@ logs com cronômetro (WS de `onLog`), progresso por job/painel (WS de `onProgres
 Fluxos Criar/Série/Sessões/Galeria/Config todos via REST. (A TUI Ink continua existindo p/ quem prefere terminal.)
 
 **(3) Verificador de dependências + auth** — evoluir `doctor()/authInspect()` num `checkEnvironment()` que, por CLI,
-retorna: instalada? (which/versão), autenticada? (codex `auth inspect` ready / claude logado / agy `models` acessível),
+retorna: instalada? (which/versão), autenticada? (codex `auth inspect` ready / claude logado),
 e `remediation` (passo-a-passo). UI: checklist com botões guiados — instalar (mostra comando/copiável), logar
 (`claude login`/login do codex em terminal embutido, streamando saída), revalidar. Automatiza o que é seguro
 (spawn do login, re-check). codex expira e auto-refresha (já visto).
 
 **(4) Controle por CLI (feature flags)** — mapa de capacidades:
-`codex→{geração, juiz-codex}`, `claude→{juiz-claude, add-style, cânone-série}`, `agy→{geração-agy, juiz-agy}`.
+`codex→{geração, juiz-codex}`, `claude→{juiz-claude, add-style, cânone-série}`.
 `settings.enabledClis` persiste o estado. Desligar uma CLI → UI desabilita (cinza + tooltip "requer X") os recursos
 dependentes e o motor deixa de oferecê-los (os providers já são selecionáveis por settings; basta filtrar pelos
-habilitados e avisar). Ex.: sem `agy` some o 2º gerador e o juiz Gemini; sem `claude` some add-style/cânone.
+habilitados e avisar). Ex.: sem `claude` somem add-style e cânone.
 
 **(5) Instalável/distribuível** — `electron-builder` gera instaladores; **GitHub Releases** hospeda instaladores +
 feed de update. Estrutura: `ui/`, `src/server/`, `src/desktop/`, `docs/`, `.github/workflows/release.yml`
@@ -80,15 +80,15 @@ cert OV/EV senão SmartScreen assusta; macOS: notarização). Custo/step a consi
 
 ## 4. Realidade de produto (pensar como product engineer) — RISCOS
 
-- **BYO-assinatura**: todo usuário final precisa de codex(ChatGPT)+claude+agy instalados e logados. Isso é barreira
+- **BYO-assinatura**: o usuário final precisa de codex(ChatGPT) e, para recursos opcionais, claude instalado e logado. Isso é barreira
   de onboarding e **dependência de ToS de terceiros**. O valor vendável é a **orquestração + motor de
   consistência/série + UX**, não a geração em si.
 - **Risco jurídico (o maior)**: revender um produto que "pega carona" na assinatura ChatGPT/Claude do usuário via
   CLI é área cinzenta de ToS. Caminho comercial mais seguro: **modo API-key** (o usuário põe a própria chave
   OpenAI/Anthropic — oficial e pago por ele) OU um backend hospedado por você. Recomendo suportar **modo API-key**
   além do modo CLI, e deixar claro na doc o que é permitido.
-- **Multiplataforma**: as CLIs precisam existir no SO alvo. claude (Windows ok), codex (npm cross-platform),
-  agy (Go — verificar build Windows), wrapper gpt-image-2 (Node + binário Rust com target Windows). **Validar no
+- **Multiplataforma**: as CLIs precisam existir no SO alvo. claude (Windows ok), codex (npm cross-platform) e
+  wrapper gpt-image-2 (Node + binário Rust com target Windows). **Validar no
   MVP.** Distribuir p/ "usuários comuns" no Windows exige as CLIs nativas no Windows (não WSL).
 - **Code signing** custa (~US$100–400/ano Win, US$99/ano Apple).
 

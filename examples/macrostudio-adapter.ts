@@ -22,11 +22,11 @@ export interface GeradorDeImagemParaCena {
   }>;
 }
 
-const tamanhoPorSuporte: Record<IdSuporte, string> = {
-  reels: '1536x2048',
-  corte: '1536x2048',
+export const tamanhoPorSuporte: Record<IdSuporte, string> = {
+  reels: '1152x2048',
+  corte: '1152x2048',
   paisagem: '2048x1152',
-  card: '1536x2048',
+  card: '1280x1600',
   post: '2048x2048',
 };
 

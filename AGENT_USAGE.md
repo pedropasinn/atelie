@@ -22,10 +22,10 @@ atelie --session <id> --json
 atelie --run --prompt "<pedido>" --styles fotorrealista,watercolor --versions 2 --json
 
 # opções do --run:
-#   --gen-provider codex|agy         (codex=gpt-image-2 default; agy=modelo Gemini, agêntico)
-#   --judge-mode painel|unico        (painel=Claude+Codex+Gemini consenso [default]; unico=1 juiz)
-#   --judge-models "claude:sonnet,codex:gpt-5.4,agy:Gemini 3.5 Flash (High)"
-#   --size 2K|WxH|square|portrait|landscape|wide   (dica no codex; agy ~1024²)
+#   --gen-provider codex             (único provedor; outro id falha explicitamente)
+#   --judge-mode painel|unico        (painel=Claude+Codex; unico=1 juiz)
+#   --judge-models "claude:sonnet,codex:gpt-5.4"
+#   --size 2K|WxH|square|portrait|landscape|wide   (dica no codex)
 #   --quality low|medium|high
 #   --refs a.png,b.png               (consistência/style-transfer via codex edit)
 #   --avoid "texto, marca dagua"     (negativos)
@@ -58,5 +58,5 @@ sem gerar imagens reais.
 `{sessionId, dir, request, versionsPerStyle, iterations:[{iteration, durationMs, results:[{styleId,index,pngPath,ok,verdict:{nota,aprovado,alinhamento,problemas[],sugestao_melhoria,prompt_sugerido,painel?:[{provider,model,nota,aprovado}]}}], best}], best:{styleId,pngPath,nota}, durationMs}`.
 Progresso/log com cronômetro vai no **stderr**; o JSON vai no **stdout**.
 
-Notas: painel = 3 chamadas de juiz por imagem (custo/tempo); use `--judge-mode unico` para rápido/barato.
+Notas: o painel padrão faz 2 chamadas de juiz por imagem (custo/tempo); use `--judge-mode unico` para rápido/barato.
 `codex exec` está quebrado no ambiente → juiz-codex usa o backend `responses` (transparente para o usuário).

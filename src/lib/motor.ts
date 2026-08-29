@@ -11,7 +11,8 @@ import { coerce } from './judge';
 import { extractJson } from './jsonx';
 import { cliEnabled, loadSettings } from './settings';
 import { findStyle } from './userStyles';
-import { createArtifactManifest, provenanceVerdict, writeManifest, type ArtifactManifest } from './provenance';
+import { createArtifactManifest, pngDimensions, provenanceVerdict, writeManifest, type ArtifactManifest } from './provenance';
+import { estimateImageCost } from './cost';
 
 export interface MotorGenerationInput {
   prompt: string;
@@ -31,6 +32,8 @@ export interface MotorGenerationOutput {
   model: string;
   durationMs?: number;
   costUsd?: number;
+  costType?: 'estimativa' | 'informado';
+  costSource?: string;
 }
 
 export interface MotorJudgeInput {
@@ -124,11 +127,16 @@ async function defaultGenerate(input: MotorGenerationInput): Promise<MotorGenera
     signal: input.signal,
     onProgress: input.onProgress,
   });
+  const dimensions = pngDimensions(result.pngPath);
+  const estimatedCost = estimateImageCost(input.quality, `${dimensions.largura}x${dimensions.altura}`);
   return {
     pngPath: result.pngPath,
     provider: result.meta.resolved || provider.id,
     model: result.meta.model || 'gpt-image-2',
     durationMs: Date.now() - started,
+    costUsd: estimatedCost.usd,
+    costType: estimatedCost.tipo,
+    costSource: estimatedCost.fonte,
   };
 }
 
@@ -203,10 +211,14 @@ export class AtelieMotor {
       let generated: MotorGenerationOutput | undefined;
       let judged: MotorJudgeOutput | undefined;
       const verdicts = [];
+      let artifactCostUsd = 0;
+      let artifactCostType: 'estimativa' | 'informado' = 'estimativa';
+      const artifactCostSources = new Set<string>();
       const maxAttempts = 1 + (brief.iteracoes ?? 1);
       const artifactStarted = Date.now();
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const attemptStarted = Date.now();
         assertNotAborted(options.signal);
         const outPath = path.join(artifactDir, `tentativa-${String(attempt).padStart(2, '0')}.png`);
         options.onProgress?.({ etapa: attempt === 1 ? 'gerando' : 'iterando', estilo: styleId, artefato: artifactN, tentativa: attempt, concluidos: styleIndex, total: styleIds.length, mensagem: `gerando ${styleId}, tentativa ${attempt}` });
@@ -224,15 +236,29 @@ export class AtelieMotor {
             concluidos: styleIndex, total: styleIds.length, percentual: event.percent, mensagem: event.message || event.phase,
           }),
         });
+        const generationMs = generated.durationMs ?? Date.now() - attemptStarted;
+        const generatedCost = generated.costUsd ?? estimateImageCost(brief.qualidade, brief.tamanho).usd;
+        artifactCostUsd += generatedCost;
+        artifactCostType = generated.costType ?? (generated.costUsd == null ? 'estimativa' : 'informado');
+        artifactCostSources.add(generated.costSource ?? (generated.costUsd == null ? 'tabela-padrao-atelie-2026-08-29' : 'provedor-injetado'));
         assertNotAborted(options.signal);
         options.onProgress?.({ etapa: 'julgando', estilo: styleId, artefato: artifactN, tentativa: attempt, concluidos: styleIndex, total: styleIds.length, mensagem: `avaliando legibilidade de ${styleId}` });
+        const judgmentStarted = Date.now();
         judged = await this.deps.judge({ pngPath: generated.pngPath, composed: { ...composed, prompt }, signal: options.signal });
-        verdicts.push(provenanceVerdict(attempt, prompt, judged.verdict, { provider: judged.provider, model: judged.model }, this.deps.now().toISOString()));
+        const judgmentMs = Date.now() - judgmentStarted;
+        verdicts.push(provenanceVerdict(
+          attempt,
+          prompt,
+          judged.verdict,
+          { provider: judged.provider, model: judged.model },
+          this.deps.now().toISOString(),
+          { totalMs: Date.now() - attemptStarted, generationMs, judgmentMs },
+        ));
         if (judged.verdict.aprovado || attempt === maxAttempts) break;
         prompt = [
           judged.verdict.prompt_sugerido.trim() || prompt,
           judged.verdict.sugestao_melhoria.trim() ? `AJUSTE OBRIGATÓRIO: ${judged.verdict.sugestao_melhoria.trim()}.` : '',
-          brief.modo === 'cena'
+          brief.modo === 'cena' || brief.texto_fora_da_imagem
             ? 'Mantenha a imagem sem qualquer texto.'
             : `Mantenha exatamente estas strings e nenhuma outra: ${composed.stringsVisiveis.map((s) => `"${s}"`).join(', ')}. Sem microtexto.`,
         ].filter(Boolean).join(' ');
@@ -253,7 +279,9 @@ export class AtelieMotor {
         verdicts,
         pngPath: finalPng,
         durationMs: Date.now() - artifactStarted,
-        costUsd: generated.costUsd,
+        costUsd: Math.round(artifactCostUsd * 1_000_000) / 1_000_000,
+        costType: artifactCostType,
+        costSource: [...artifactCostSources].join('; '),
         createdAt: this.deps.now().toISOString(),
       });
       writeManifest(manifestPath, manifest);

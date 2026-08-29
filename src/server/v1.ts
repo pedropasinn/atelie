@@ -33,7 +33,7 @@ function sameToken(expected: string, supplied: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function authorize(token: string | undefined, request: FastifyRequest, reply: FastifyReply): boolean {
+export function authorize(token: string | undefined, request: FastifyRequest, reply: FastifyReply): boolean {
   if (!token) return true;
   const header = request.headers.authorization;
   const supplied = typeof header === 'string' && /^Bearer\s+/i.test(header) ? header.replace(/^Bearer\s+/i, '') : '';
@@ -63,7 +63,12 @@ export async function registerV1Routes(app: FastifyInstance, options: V1Options)
 
   app.post('/v1/jobs', { preHandler: protectedRoute }, async (request, reply) => {
     try {
-      const { job, created } = options.jobs.create(request.body);
+      const body = request.body as Record<string, unknown> | undefined;
+      const envelope = body && typeof body === 'object' && !Array.isArray(body) && body.brief != null;
+      const brief = envelope ? body.brief : request.body;
+      const force = body?.force === true;
+      const retry = body?.retry === true;
+      const { job, created } = options.jobs.create(brief, { force, retry });
       reply.header('Location', `/v1/jobs/${job.id}`);
       return reply.code(created ? 202 : 200).send(job);
     } catch (error) {

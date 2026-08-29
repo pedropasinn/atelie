@@ -48,7 +48,7 @@ npm start                 # abre a TUI (precisa de um terminal real — usa raw 
 
 ## Integração
 
-O Ateliê 0.2.0 também é um motor sem UI, consumível por HTTP ou in-process:
+O Ateliê 0.2.1 também é um motor sem UI, consumível por HTTP ou in-process:
 
 ```bash
 atelie --serve --port 4177
@@ -69,7 +69,8 @@ parâmetros, histórico dos juízes, SHA-256 e métricas disponíveis.
 
 O brief tem dois modos: `explicacao`, para infográficos com no máximo 12 strings
 curtas e juiz de ortografia/legibilidade; e `cena`, para imagens sem texto destinadas
-a peças. A qualidade padrão da integração é `medium`.
+a peças. Em `explicacao`, `texto_fora_da_imagem: true` também gera raster sem texto
+e devolve rótulos para overlay HTML/SVG. A qualidade padrão é `medium`.
 
 Contratos e exemplos:
 
@@ -92,7 +93,11 @@ npm start -- --judge-file <png> --request "um gato de óculos lendo jornal" [--s
 | `ATELIE_JUDGE_MODEL` | `sonnet` | modelo do juiz (visão) |
 | `ATELIE_CONCURRENCY` | `0` | jobs de geração em paralelo (`0` = todos de uma vez) |
 | `ATELIE_JOB_CONCURRENCY` | `1` | jobs simultâneos na fila HTTP v1 |
-| `ATELIE_TOKEN` | vazio | token Bearer literal ou `@arquivo` 0600 para rotas v1 |
+| `ATELIE_JOB_TRANSIENT_RETRIES` | `2` | retries automáticos após falha transitória |
+| `ATELIE_JOB_RETRY_DELAY_MS` | `250` | intervalo base crescente entre retries |
+| `ATELIE_FAILED_JOB_TTL_MS` | `3600000` | TTL de `failed` na idempotência |
+| `ATELIE_IMAGE_PRICE_TABLE_JSON` | tabela interna | preços por qualidade/orientação usados só como estimativa |
+| `ATELIE_TOKEN` | vazio | token Bearer literal ou `@arquivo` 0600 para `/v1/*`, `/api/*` e WebSocket |
 | `ATELIE_TOKEN_FILE` | vazio | caminho explícito de arquivo de token 0600 |
 | `ATELIE_AUTO_OPEN` | `1` | abre a pasta publicada ao fim de cada geração (`0` desliga; na CLI, `--no-open`) |
 

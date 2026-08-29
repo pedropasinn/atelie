@@ -11,6 +11,13 @@ export interface AtelieClientOptions {
   fetch?: typeof globalThis.fetch;
 }
 
+export interface CreateJobOptions {
+  /** Ignora a idempotência inclusive para job ativo/concluído; pode duplicar custo. */
+  force?: boolean;
+  /** Cria nova execução somente quando a anterior falhou ou foi cancelada. */
+  retry?: boolean;
+}
+
 export class AtelieHttpError extends Error {
   constructor(readonly status: number, readonly body: unknown) {
     super(`Ateliê HTTP ${status}`);
@@ -50,8 +57,9 @@ export class AtelieClient {
     return this.request('/v1/styles');
   }
 
-  createJob(brief: StructuredBrief): Promise<StoredJob> {
-    return this.request('/v1/jobs', { method: 'POST', body: JSON.stringify(brief) });
+  createJob(brief: StructuredBrief, options: CreateJobOptions = {}): Promise<StoredJob> {
+    const body = options.force || options.retry ? { brief, ...options } : brief;
+    return this.request('/v1/jobs', { method: 'POST', body: JSON.stringify(body) });
   }
 
   getJob(id: string): Promise<StoredJob> {

@@ -10,7 +10,7 @@ export interface RunOpts {
   onStderrLine?: (l: string) => void;
   stdinData?: string;
   timeoutMs?: number;
-  /** Diretório de trabalho do subprocesso (isola geração agy sob concorrência). */
+  /** Diretório de trabalho do subprocesso. */
   cwd?: string;
   /** Ambiente do subprocesso. `undefined` → herda o do pai (default). */
   env?: NodeJS.ProcessEnv;

@@ -23,12 +23,13 @@ export const codexProvider: GenProvider = {
 
 export const GEN_PROVIDERS: Record<GenProviderId, GenProvider> = { codex: codexProvider };
 
-/** Resolve o provedor por id; qualquer valor cai em `codex` (é o único). */
-export function getGenProvider(_id?: GenProviderId | string): GenProvider {
+/** Resolve o provedor sem fallback silencioso, preservando a proveniência. */
+export function getGenProvider(id?: GenProviderId | string): GenProvider {
+  if (id != null && id !== 'codex') throw new Error(`provedor de geração desconhecido: "${id}"`);
   return codexProvider;
 }
 
-/** Mantido por compat de assinatura: todo modo (generate/edit/transparent) roda no codex. */
-export function resolveGenProvider(_id?: GenProviderId | string, _mode?: GenJob['mode']): GenProvider {
-  return codexProvider;
+/** Mantém a assinatura com modo, mas valida o id antes de resolver. */
+export function resolveGenProvider(id?: GenProviderId | string, _mode?: GenJob['mode']): GenProvider {
+  return getGenProvider(id);
 }

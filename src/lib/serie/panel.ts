@@ -69,7 +69,7 @@ function previousPanel(serie: Serie, n: number): Painel | undefined {
  * LOOP DE COERÊNCIA de um painel: edit multi-ref (âncoras dos personagens presentes,
  * + painel anterior se `incluirAnterior`) → judgeConsistency → reforça os drifts no
  * próximo prompt, até (consistencia>=consistThreshold E cenaNota>=cenaThreshold) ou
- * esgotar maxTentativas. Painéis usam SEMPRE codex (agy não suporta edit).
+ * esgotar maxTentativas. Painéis usam sempre codex para edição referenciada.
  */
 export async function generatePanel(serie: Serie, painel: Painel, opts: PanelOpts = {}): Promise<Painel> {
   const s = loadSettings();

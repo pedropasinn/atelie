@@ -23,7 +23,7 @@ export function subjectAnchor(request: string): string {
  *   por fim acrescenta " AJUSTE: <sugestao_melhoria>".
  * - `opts.avoid` (negativos): anexa " Avoid: <neg>." ao FINAL, sem mexer no sujeito.
  * - `opts.size` (dimensão): aceito por assinatura, mas NÃO altera o texto — a dimensão
- *   é passada por flag ao codex e pela instrução ao agy, não pelo prompt composto.
+ *   é passada por flag ao codex, não pelo prompt composto.
  */
 export function compose(
   request: string,

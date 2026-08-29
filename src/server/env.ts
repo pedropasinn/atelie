@@ -8,7 +8,7 @@ import { nodeBin, nodeSpawnEnv } from '../lib/nodeBin';
 // NÃO gera imagem nem consome tokens: só sonda binários com timeout curto.
 
 export interface CliStatus {
-  id: 'codex' | 'claude' | 'agy';
+  id: 'codex' | 'claude';
   nome: string;
   instalada: boolean;
   versao?: string;
@@ -116,31 +116,6 @@ async function checkClaude(): Promise<CliStatus> {
   return status;
 }
 
-async function checkAgy(): Promise<CliStatus> {
-  const v = await tryRun('agy', ['--version']);
-  const instalada = v.ran;
-  let autenticada = false;
-  let detalhe = 'agy não encontrado na PATH';
-  if (instalada) {
-    // `agy models` lista modelos → CLI configurada/autenticada.
-    const m = await tryRun('agy', ['models'], 15000);
-    autenticada = m.ran && m.ok && m.stdout.trim().length > 0;
-    detalhe = autenticada ? 'agy responde e `agy models` lista modelos' : 'agy presente, mas `agy models` não listou modelos';
-  }
-  const status: CliStatus = {
-    id: 'agy',
-    nome: 'agy (multi-provider)',
-    instalada,
-    autenticada,
-    detalhe,
-    capacidades: ['geração-agy', 'juiz-agy'],
-  };
-  const versao = instalada ? firstLine(v.stdout || v.stderr) : undefined;
-  if (versao) status.versao = versao;
-  if (!autenticada) status.remediacao = ['Instale/configure o agy (`agy models` deve listar modelos).'];
-  return status;
-}
-
 /** Chave presente no env OU nas settings (nunca devolve o valor). */
 function keyStatus(
   provider: ApiKeyStatus['provider'],
@@ -173,11 +148,11 @@ export async function desligarClisAusentes(): Promise<string[]> {
 
 export async function checkEnvironment(): Promise<Environment> {
   const settings = loadSettings();
-  const [codex, claude, agy] = await Promise.all([checkCodex(), checkClaude(), checkAgy()]);
+  const [codex, claude] = await Promise.all([checkCodex(), checkClaude()]);
   const apiKeys: ApiKeyStatus[] = [
     keyStatus('openai', process.env.OPENAI_API_KEY, settings.openaiApiKey),
     keyStatus('anthropic', process.env.ANTHROPIC_API_KEY, settings.anthropicApiKey),
-    keyStatus('google', process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY, settings.googleApiKey),
+    keyStatus('google', process.env.GOOGLE_API_KEY, settings.googleApiKey),
   ];
-  return { clis: [codex, claude, agy], apiKeys, authMode: settings.authMode };
+  return { clis: [codex, claude], apiKeys, authMode: settings.authMode };
 }

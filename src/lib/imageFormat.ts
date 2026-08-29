@@ -9,8 +9,8 @@ export interface ImageFormat {
 
 /**
  * Detecta o formato REAL de uma imagem pelos magic bytes (PNG 89504E47 /
- * JPEG FFD8 / WEBP "RIFF…WEBP"). O `agy` salva JPEG com extensão .png e o
- * juiz precisa do media_type correto — por isso nunca fixamos image/png.
+ * JPEG FFD8 / WEBP "RIFF…WEBP"). O juiz precisa do media_type correto, por
+ * isso nunca confiamos apenas na extensão.
  * Default seguro = PNG quando o cabeçalho é irreconhecível.
  */
 export function detectImageFormat(filePath: string): ImageFormat {

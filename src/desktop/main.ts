@@ -1,8 +1,8 @@
 // Casca Electron do Ateliê. O motor (src/lib/*) e o servidor local (src/server/*)
 // rodam IN-PROCESS no processo main; a janela (Chromium) só carrega a UI web
 // servida pelo Fastify em 127.0.0.1:<porta efêmera>. Nada de OPENAI_API_KEY aqui:
-// a geração é via CLIs do usuário (codex/claude/agy), spawnadas pelo motor.
-import { app, BrowserWindow, Menu, Tray, shell, nativeImage } from 'electron';
+// a geração é via CLIs do usuário (Codex e, opcionalmente, Claude), spawnadas pelo motor.
+import { app, BrowserWindow, Menu, Tray, shell, nativeImage, session as electronSession } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +38,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let serverUrl = '';
 let closeServer: (() => Promise<void>) | null = null;
+let serverToken: string | undefined;
 
 /** Sobe o servidor local reusando o motor. Chamado após app.whenReady. */
 async function startLocalServer(): Promise<string> {
@@ -51,8 +52,9 @@ async function startLocalServer(): Promise<string> {
 
   // Import dinâmico: garante que o env acima já está setado quando o grafo do
   // server (e do motor) é inicializado.
-  const { startServer } = await import('../server/server');
-  const srv = await startServer(); // porta efêmera, bind 127.0.0.1
+  const [{ startServer }, { loadLocalToken }] = await Promise.all([import('../server/server'), import('../server/v1')]);
+  serverToken = loadLocalToken();
+  const srv = await startServer(undefined, { token: serverToken }); // porta efêmera, bind 127.0.0.1
   closeServer = srv.close;
   return srv.url;
 }
@@ -122,6 +124,16 @@ function createTray(url: string): void {
 
 async function bootstrap(): Promise<void> {
   serverUrl = await startLocalServer();
+  // O renderer não recebe o segredo. O processo main injeta o mesmo Bearer nas
+  // requisições HTTP e no handshake WebSocket destinados ao servidor local.
+  if (serverToken) {
+    electronSession.defaultSession.webRequest.onBeforeSendHeaders(
+      { urls: [`${serverUrl}/*`] },
+      (details, callback) => callback({
+        requestHeaders: { ...details.requestHeaders, Authorization: `Bearer ${serverToken}` },
+      }),
+    );
+  }
   createWindow(serverUrl);
   createTray(serverUrl);
 

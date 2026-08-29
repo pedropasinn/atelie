@@ -1,6 +1,6 @@
 {
   "name": "atelie",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Ateliê — esteira de geração de imagens (gpt-image-2 via Codex) com juiz Claude multimodal e loop de melhoria",
   "type": "module",
   "main": "dist-electron/main.cjs",

@@ -14,6 +14,12 @@ npm run serve -- --port 4177
 `ATELIE_JOB_CONCURRENCY` controla quantos jobs rodam ao mesmo tempo (padrão `1`).
 Cada job ainda pode emitir progresso interno do provedor.
 
+Falhas transitórias são repetidas automaticamente conforme
+`ATELIE_JOB_TRANSIENT_RETRIES` (padrão `2`, além da primeira execução). O intervalo
+base é `ATELIE_JOB_RETRY_DELAY_MS` (padrão `250`) e cresce por tentativa. Jobs
+`failed` deixam de bloquear o hash após `ATELIE_FAILED_JOB_TTL_MS` (padrão
+`3600000`, uma hora).
+
 Autenticação é opcional. `ATELIE_TOKEN` pode conter o token literal ou
 `@/caminho/para/token`. A alternativa explícita é `ATELIE_TOKEN_FILE`. Arquivos de
 token precisam estar em modo `0600`; outra permissão impede a inicialização. Envie:
@@ -22,7 +28,10 @@ token precisam estar em modo `0600`; outra permissão impede a inicialização. 
 Authorization: Bearer <token>
 ```
 
-O health check não exige token. Nenhuma resposta inclui token, chaves de API ou
+O health check `/v1/health` não exige token. Quando configurado, o mesmo token
+protege todas as demais rotas `/v1/*`, as rotas legadas `/api/*` e o handshake de
+`/api/ws`. O Electron injeta o Bearer no processo principal sem expor o token ao
+renderer. Nenhuma resposta inclui token, chaves de API ou
 credenciais das CLIs. O logger HTTP está desativado e mensagens de erro persistidas
 passam por redação de padrões de credencial.
 
@@ -33,7 +42,9 @@ passam por redação de padrões de credencial.
   "titulo": "A FÁBRICA DE CÓDIGO",
   "objetivo": "Mostrar cinco estações e a trilha auditável.",
   "modo": "explicacao",
+  "provedor": "codex",
   "estilo": "infografico-bento",
+  "texto_fora_da_imagem": true,
   "secoes": [{ "rotulo": "PEDIDO", "itens": ["limites", "testes", "risco"] }],
   "legendas_curtas": true,
   "idioma": "pt-BR",
@@ -47,7 +58,13 @@ passam por redação de padrões de credencial.
 ```
 
 - `modo`: `explicacao` produz infográfico com texto controlado; `cena` proíbe texto.
+- `provedor`: opcional, aceita somente `codex`. Qualquer outro id recebe `400
+  invalid_brief`; não existe normalização silenciosa.
 - `estilo` ou `estilos` é obrigatório. Um artefato final é produzido por estilo.
+  As duas formas são canonicalizadas para uma lista ordenada e deduplicada antes
+  do `brief_hash`.
+- `texto_fora_da_imagem: true` só atua em `explicacao`: pede uma camada visual sem
+  texto, aplica o gate de zero texto e devolve `rotulos_overlay` no manifest.
 - `iteracoes` é o número de novas tentativas depois da primeira geração.
 - `qualidade` assume `medium`, que é a política econômica das integrações.
 - Em `explicacao`, entram no máximo 12 strings visíveis, cada uma com até 42
@@ -63,6 +80,13 @@ Recebe o brief como body. Retorna `202` ao criar e `200` quando o mesmo
 `brief_hash` já existe. A idempotência sobrevive a reinícios porque `job.json` é
 persistido em `$ATELIE_HOME/jobs/<id>/`.
 
+Também aceita o envelope `{ "brief": {...}, "retry": true }` para criar nova
+execução quando a anterior está `failed`/`cancelled`, ou `{ "brief": {...},
+"force": true }` para ignorar qualquer estado anterior. `force` pode duplicar
+custo. Sem essas flags, `queued`, `running` e `completed` são reutilizados; um
+`failed` recente é reutilizado até o TTL e depois expira; `cancelled` não prende o
+hash.
+
 ### `GET /v1/jobs/{id}`
 
 Retorna `status` (`queued`, `running`, `completed`, `failed`, `cancelled`),
@@ -72,7 +96,8 @@ artefato inclui seu recibo de proveniência.
 ### `DELETE /v1/jobs/{id}`
 
 Cancela item enfileirado ou aborta geração/julgamento em curso. Jobs terminais são
-idempotentes e permanecem inalterados.
+idempotentes e permanecem inalterados. `Content-Type: application/json` com corpo
+vazio é aceito.
 
 ### `GET /v1/jobs/{id}/artifact/{n}`
 
@@ -90,7 +115,18 @@ Health leve, sem sondar CLIs nem consumir tokens.
 ## Recibo de proveniência
 
 Cada pasta `artifact-NNN/` contém `artifact.png`, tentativas e `manifest.json` no
-schema `atelie.provenance/v1`: prompt final, estilo, provedor/modelo, parâmetros,
-histórico de vereditos, SHA-256 e bytes do PNG, duração e custo quando o provedor o
-informar. Referências externas entram somente como basename e SHA-256, nunca como
-caminho absoluto.
+schema `atelie.provenance/v1`: versão do Ateliê, prompt final, estilo,
+provedor/modelo reais, parâmetros, rótulos de overlay, histórico de vereditos com
+duração de geração/julgamento, SHA-256, bytes e dimensões lidas do IHDR do PNG.
+`metricas.custo_usd` é sempre preenchido junto de `custo_tipo` e `custo_fonte`.
+No caminho Codex ele é uma **estimativa**, não faturamento observado. A tabela pode
+ser substituída por `ATELIE_IMAGE_PRICE_TABLE_JSON`, por exemplo:
+
+```json
+{"low":{"square":0.004,"portrait":0.005,"landscape":0.005},"medium":{"square":0.032,"portrait":0.05,"landscape":0.05},"high":{"square":0.11,"portrait":0.165,"landscape":0.165}}
+```
+
+Os defaults são um proxy equivalente de API datado de 2026-08-29; a fonte oficial
+mantida pela OpenAI é a [página de preços](https://developers.openai.com/api/docs/pricing).
+Referências externas entram somente como basename e SHA-256, nunca como caminho
+absoluto.
