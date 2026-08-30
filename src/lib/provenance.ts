@@ -2,13 +2,25 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { overlayLabels, type OverlayLabel, type StructuredBrief } from './brief';
+import { overlayLabels, type OverlayLabel, type RemocaoFundo, type StructuredBrief } from './brief';
+import type { FundoMetricas, FundoMotor } from './backgroundRemoval';
 import type { ResultadoConteudo } from './juizConteudo';
 import type { Verdict } from '../types';
 import { ATELIE_VERSION } from '../version';
 import type { VerificacaoProporcao } from './proporcao';
 
 export const MANIFEST_SCHEMA = 'atelie.provenance/v1' as const;
+
+export interface FundoProveniencia {
+  solicitado: RemocaoFundo;
+  motor: FundoMotor;
+  modelo: string;
+  removido: boolean;
+  alpha_validado: boolean;
+  metricas: FundoMetricas | null;
+  problemas: string[];
+  arquivo_original_sha256: string;
+}
 
 export interface ProvenanceVerdict {
   tentativa: number;
@@ -47,6 +59,7 @@ export interface ProvenanceVerdict {
     prompt_sugerido: string;
     juiz: { provider: string; model: string };
   } | null;
+  fundo?: FundoProveniencia;
 }
 
 export interface ArtifactManifest {
@@ -63,7 +76,7 @@ export interface ArtifactManifest {
   tamanho_solicitado?: string;
   proporcao?: VerificacaoProporcao;
   parametros: {
-    modo: 'explicacao' | 'cena';
+    modo: 'explicacao' | 'cena' | 'componente';
     provedor_solicitado: 'codex';
     texto_fora_da_imagem: boolean;
     texto_extra_permitido: boolean;
@@ -77,7 +90,10 @@ export interface ArtifactManifest {
   };
   rotulos_overlay: OverlayLabel[];
   vereditos: ProvenanceVerdict[];
-  arquivo: { nome: string; mime: 'image/png'; sha256: string; bytes: number; dimensoes: { largura: number; altura: number } };
+  fundo?: FundoProveniencia;
+  artefato_final: { nome: string } | null;
+  motivo_sem_artefato_final?: string;
+  arquivo: { nome: string; mime: 'image/png'; sha256: string; bytes: number; dimensoes: { largura: number; altura: number } } | null;
   metricas: { duracao_ms: number; custo_usd: number; custo_tipo: 'estimativa' | 'informado'; custo_fonte: string };
 }
 
@@ -140,6 +156,7 @@ export function provenanceVerdict(
     juizConteudo: { provider: string; model: string };
     visual: { verdict: Verdict; judge: { provider: string; model: string } } | null;
   },
+  fundo?: FundoProveniencia,
 ): ProvenanceVerdict {
   const receipt: ProvenanceVerdict = {
     tentativa,
@@ -157,6 +174,7 @@ export function provenanceVerdict(
     duracao_ms: Math.max(0, Math.round(durations.totalMs)),
     geracao_ms: Math.max(0, Math.round(durations.generationMs)),
     julgamento_ms: Math.max(0, Math.round(durations.judgmentMs)),
+    fundo,
   };
   if (checks) {
     receipt.conteudo = {
@@ -192,15 +210,19 @@ export function createArtifactManifest(input: {
   style: { id: string; nome: string };
   provider: { id: string; model: string };
   verdicts: ProvenanceVerdict[];
-  pngPath: string;
+  pngPath?: string;
+  noArtifactReason?: string;
   durationMs: number;
   costUsd: number;
   costType: 'estimativa' | 'informado';
   costSource: string;
   createdAt?: string;
 }): ArtifactManifest {
-  const stat = fs.statSync(input.pngPath);
-  const dimensoes = pngDimensions(input.pngPath);
+  const stat = input.pngPath ? fs.statSync(input.pngPath) : undefined;
+  const dimensoes = input.pngPath ? pngDimensions(input.pngPath) : undefined;
+  const arquivo = input.pngPath && stat && dimensoes ? {
+    nome: path.basename(input.pngPath), mime: 'image/png' as const, sha256: sha256File(input.pngPath), bytes: stat.size, dimensoes,
+  } : null;
   return {
     schema: MANIFEST_SCHEMA,
     artifact_id: input.artifactId,
@@ -228,7 +250,10 @@ export function createArtifactManifest(input: {
     },
     rotulos_overlay: input.brief.texto_fora_da_imagem ? overlayLabels(input.brief) : [],
     vereditos: input.verdicts,
-    arquivo: { nome: path.basename(input.pngPath), mime: 'image/png', sha256: sha256File(input.pngPath), bytes: stat.size, dimensoes },
+    fundo: input.verdicts[input.verdicts.length - 1]?.fundo,
+    artefato_final: arquivo ? { nome: arquivo.nome } : null,
+    motivo_sem_artefato_final: arquivo ? undefined : input.noArtifactReason ?? 'nenhum artefato final disponível',
+    arquivo,
     metricas: {
       duracao_ms: Math.max(0, Math.round(input.durationMs)),
       custo_usd: input.costUsd,

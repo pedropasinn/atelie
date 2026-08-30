@@ -12,3 +12,4 @@ dist-electron/
 release/
 ui/dist/
 ui/node_modules/
+.venv-fundo/

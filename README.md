@@ -67,10 +67,30 @@ estilos, health, cancelamento e download dos PNGs. O mesmo `brief_hash` devolve 
 mesmo job. Cada artefato recebe um `manifest.json` com prompt final, provedor/modelo,
 parâmetros, histórico dos juízes, SHA-256 e métricas disponíveis.
 
-O brief tem dois modos: `explicacao`, para infográficos com no máximo 12 strings
-curtas; e `cena`, para imagens sem texto destinadas
-a peças. Em `explicacao`, `texto_fora_da_imagem: true` também gera raster sem texto
-e devolve rótulos para overlay HTML/SVG. A qualidade padrão é `medium`.
+O brief tem três modos: `explicacao`, para infográficos com no máximo 12 strings
+curtas; `cena`, para imagens sem texto destinadas a peças; e `componente`, para
+logos, ícones, stickers e elementos com alpha validado. Em `explicacao`,
+`texto_fora_da_imagem: true` também gera raster sem texto e devolve rótulos para
+overlay HTML/SVG. A qualidade padrão é `medium`.
+
+No modo `componente`, o motor pede um objeto único sobre fundo liso, remove e valida
+o fundo antes de transcrever conteúdo e julgar o visual. A composição xadrez é a
+imagem enviada aos dois juízes. O artefato final é o PNG recortado; a geração sem
+recorte permanece em `tentativa-NN-original.png`. O default usa `rembg` com
+`isnet-general-use`; configure o executável em `ATELIE_FUNDO_PYTHON` ou mantenha o
+venv em `.venv-fundo/bin/python`. `remover_fundo: "opcional"` mantém o original com
+aviso se esse runtime estiver indisponível.
+O fundo padrão é o verde-chroma `#00FF41`: é saturado, o gpt-image-2 tende a
+renderizá-lo liso e ele é incomum em logos; o prompt proíbe essa cor no objeto. O
+motor `cor-solida` não consegue distinguir fundo e objeto com a mesma cor; nesses
+casos, use `rembg` ou outra cor de geração.
+
+O gate de `halo` aceita por default no máximo 5% da área do objeto (`alpha >= 10`).
+Ele conta somente pixels `10 <= alpha < 245` fora da faixa antialias: a dilatação de
+2 px dos pixels opacos (`alpha >= 245`). As métricas registram o mesmo valor em
+`halo` e `fracao_semitransparente_fora_da_faixa`, além de
+`faixa_antialias_px: 2`. Na medição local com CPU, o `rembg`
+`isnet-general-use` processou o logo sintético de 1024×1024 em 4,513 s.
 
 No motor de brief estruturado, o julgamento ocorre em duas etapas. Primeiro, o VLM
 apenas transcreve todo o texto visível como `{textos: string[]}`. O código compara essa
@@ -112,6 +132,9 @@ npm start -- --judge-file <png> --request "um gato de óculos lendo jornal" [--s
 | `ATELIE_JOB_RETRY_DELAY_MS` | `250` | intervalo base crescente entre retries |
 | `ATELIE_FAILED_JOB_TTL_MS` | `3600000` | TTL de `failed` na idempotência |
 | `ATELIE_IMAGE_PRICE_TABLE_JSON` | tabela interna | preços por qualidade/orientação usados só como estimativa |
+| `ATELIE_FUNDO_PYTHON` | `.venv-fundo/bin/python` | Python com Pillow, numpy e rembg para componentes |
+| `ATELIE_FUNDO_SCRIPT` | resolução automática | override de `remover_fundo.py`; no app empacotado vem em `resources/fundo/` |
+| `ATELIE_FUNDO_TIMEOUT_MS` | `120000` | timeout da remoção; o primeiro `rembg` pode baixar o modelo e exigir ajuste |
 | `ATELIE_TOKEN` | vazio | token Bearer literal ou `@arquivo` 0600 para `/v1/*`, `/api/*` e WebSocket |
 | `ATELIE_TOKEN_FILE` | vazio | caminho explícito de arquivo de token 0600 |
 | `ATELIE_AUTO_OPEN` | `1` | abre a pasta publicada ao fim de cada geração (`0` desliga; na CLI, `--no-open`) |
@@ -182,6 +205,8 @@ próprio binário do Electron (`process.execPath`) e o motor spawna o wrapper co
 ## Notas técnicas (contrato verificado)
 Ver `BUILD_CONTRACT.md`. Pontos que importam:
 - `--provider codex` é flag **global** (antes do subcomando `images generate`).
-- Sob Codex, `--size` continua sendo uma **dica do provedor** (pode não ser honrada exatamente) e `--n` não existe → N versões = N chamadas. No motor de brief, as dimensões reais são verificadas após cada geração: com `proporcao_estrita: true`, divergências reprovam e acionam nova tentativa; com `false`, ficam registradas como aviso no veredito e na proveniência. O default é estrito em `explicacao` e flexível em `cena`.
-- Transparência (sticker/logo) usa o subcomando `transparent generate`.
+- Sob Codex, `--size` continua sendo uma **dica do provedor** (pode não ser honrada exatamente) e `--n` não existe → N versões = N chamadas. No motor de brief, as dimensões reais são verificadas após cada geração: com `proporcao_estrita: true`, divergências reprovam e acionam nova tentativa; com `false`, ficam registradas como aviso no veredito e na proveniência. O default é estrito em `explicacao` e flexível em `cena`/`componente`.
+- Transparência (sticker/logo) usa o subcomando `transparent generate`; em briefs
+  `componente`, o alpha nativo ainda passa pelo gate determinístico e só há nova
+  remoção quando ele reprova.
 - O juiz costuma duplicar o texto de saída; o parser (`lib/jsonx.ts`) extrai o primeiro `{...}` balanceado.

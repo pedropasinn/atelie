@@ -52,13 +52,39 @@ atelie --judge-file <png> --request "..." [--style <id>] [--model sonnet]
 
 O SDK TypeScript está em `atelie/sdk`; o contrato HTTP e o schema do brief estão em
 `docs/API-V1.md`. Testes e integrações devem injetar fakes para `generate`,
-`transcribe` e `judge` no `criarMotor`, sem gerar imagens reais nem chamar VLMs.
+`transcribe` e `judge` no `criarMotor`, sem gerar imagens reais nem chamar VLMs. Em
+testes de `modo: "componente"`, injete também `removeBackground`.
 
 No brief estruturado, use `largura_final_px` quando souber a largura de exibição. Uma
 seção pode declarar `ordem_obrigatoria: true`; nesse caso, seus itens precisam aparecer
 na ordem informada. Texto fora de `stringsVisiveis` reprova a tentativa por default.
 Somente em `modo: "explicacao"`, `texto_extra_permitido: true` libera extras. Em
 `modo: "cena"` ou com `texto_fora_da_imagem: true`, qualquer texto continua proibido.
+
+Para componentes reutilizáveis em HTML/Remotion:
+
+```json
+{
+  "titulo": "Ícone coruja",
+  "objetivo": "coruja geométrica azul, objeto único",
+  "modo": "componente",
+  "estilo": "logo-icone",
+  "texto_permitido": ["ATELIÊ"],
+  "fundo_geracao": "#00FF41",
+  "remover_fundo": "obrigatorio",
+  "motor_fundo": "rembg",
+  "secoes": [], "idioma": "pt-BR", "qualidade": "medium",
+  "negativos": [], "refs": [], "iteracoes": 1
+}
+```
+
+O componente só chega aos juízes depois do gate de alpha, margem, borda, fragmentos
+e halo. Eles recebem a composição xadrez; `artifact.png` recebe o alpha validado e
+`tentativa-NN-original.png` preserva a geração. Se a remoção for obrigatória e o
+Python estiver indisponível, o veredito é reprovado, `artifact.png` não é criado e
+o manifesto registra `artefato_final: null` com `motivo_sem_artefato_final`. Se o
+removedor produzir um recorte que apenas falhe nas métricas, esse último recorte —
+nunca o original opaco — é preservado como `artifact.png` para diagnóstico.
 
 O motor chama primeiro o transcritor de conteúdo, que devolve apenas
 `{textos: string[]}`. A comparação e o veto são determinísticos. O juiz visual recebe a
@@ -72,7 +98,8 @@ O Codex pode devolver proporção diferente da pedida em `--size`. No motor de b
 aliases (`square`, `portrait`, `landscape`/`wide`) são conferidos por orientação e
 `WxH` por razão, com tolerância relativa de 5%. `proporcao_estrita` reprova e itera
 quando houver divergência; sem o gate estrito, o veredito e o recibo registram um
-aviso. O default é `true` em `modo: "explicacao"` e `false` em `modo: "cena"`.
+aviso. O default é `true` em `modo: "explicacao"` e `false` em
+`modo: "cena"`/`"componente"`.
 
 ## Forma do JSON de `--run`
 `{sessionId, dir, request, versionsPerStyle, iterations:[{iteration, durationMs, results:[{styleId,index,pngPath,ok,verdict:{nota,aprovado,alinhamento,problemas[],sugestao_melhoria,prompt_sugerido,painel?:[{provider,model,nota,aprovado}]}}], best}], best:{styleId,pngPath,nota}, durationMs}`.

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.3 — 2026-08-30
+
+- trilha de **componente** (`modo: "componente"`): geração de objeto único em fundo liso (chroma `#00FF41` por
+  padrão), remoção de fundo por `scripts/remover_fundo.py` (motores `rembg` isnet-general-use, `cor-solida`
+  determinístico e `nenhum` para alpha nativo), validação determinística (alpha, borda transparente, margem,
+  componentes conexos em 8-conectividade, halo fora da faixa antialias, objeto da cor do fundo, objeto pequeno
+  demais) e juízes de conteúdo/visual sobre composição xadrez; original preservado, artefato final com alpha;
+  `fundo` no recibo; remoção obrigatória indisponível ou reprovada nunca entrega o original como `artifact.png`;
+- bridge Node → Python com resolução de script (`ATELIE_FUNDO_SCRIPT`, `resourcesPath`, repo), timeout
+  `ATELIE_FUNDO_TIMEOUT_MS` (120 s), ambiente mínimo, fail-closed; script incluído em `extraResources`;
+- runtime Python via `ATELIE_FUNDO_PYTHON` ou `.venv-fundo/` (rembg 2.0.81); ~2–5 s por imagem na CPU após o
+  primeiro carregamento do modelo (download único de 179 MB).
+
 ## 0.2.2 — 2026-08-30
 
 - verifica a proporção real do PNG contra o tamanho pedido (`verificarProporcao`); `proporcao_estrita` (padrão em explicações)

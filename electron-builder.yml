@@ -32,6 +32,8 @@ asar: false
 extraResources:
   - from: node_modules/gpt-image-2-skill
     to: wrapper/node_modules/gpt-image-2-skill
+  - from: scripts/remover_fundo.py
+    to: fundo/remover_fundo.py
 
 win:
   target:
@@ -41,6 +43,8 @@ win:
       to: wrapper/node_modules/gpt-image-2-skill
     - from: node_modules/gpt-image-2-skill-windows-x64-msvc
       to: wrapper/node_modules/gpt-image-2-skill-windows-x64-msvc
+    - from: scripts/remover_fundo.py
+      to: fundo/remover_fundo.py
     # Codex CLI: entra SÓ para o login ChatGPT do wizard (src/lib/codexCli.ts).
     # O `codex-code-mode-host` (~46MB) é do modo de execução de código, que o
     # Ateliê nunca chama — fica de fora para não inchar o instalador.
@@ -59,6 +63,8 @@ mac:
       to: wrapper/node_modules/gpt-image-2-skill
     - from: node_modules/gpt-image-2-skill-darwin-arm64
       to: wrapper/node_modules/gpt-image-2-skill-darwin-arm64
+    - from: scripts/remover_fundo.py
+      to: fundo/remover_fundo.py
     - from: node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin
       to: codex
       filter:
@@ -74,6 +80,8 @@ linux:
       to: wrapper/node_modules/gpt-image-2-skill
     - from: node_modules/gpt-image-2-skill-linux-x64-gnu
       to: wrapper/node_modules/gpt-image-2-skill-linux-x64-gnu
+    - from: scripts/remover_fundo.py
+      to: fundo/remover_fundo.py
     - from: node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl
       to: codex
       filter:

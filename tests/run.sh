@@ -30,6 +30,8 @@ echo "── proporção solicitada + gate do motor fake"
 if node --import tsx tests/proporcao.test.ts; then :; else FAIL=1; fi
 echo "── juiz de conteúdo determinístico + ordem dos juízes"
 if node --import tsx tests/conteudo.test.ts; then :; else FAIL=1; fi
+echo "── componentes: remoção e validação de fundo"
+if node --import tsx tests/componente.test.ts; then :; else FAIL=1; fi
 
 echo "── parser do login por código de dispositivo (wizard de 1ª execução)"
 if node --import tsx tests/codexlogin.test.ts; then :; else FAIL=1; fi

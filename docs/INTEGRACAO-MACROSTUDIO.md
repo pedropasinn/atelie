@@ -66,3 +66,14 @@ O brief usa `modo: "cena"`, portanto o juiz do Ateliê reprova texto acidental. 
 revisão humana do Macrostudio continuam decidindo se a peça sai. Idempotência é pelo
 `brief_hash`; persistir o `atelieJobId` em `Asset.sourceId` permite reconstruir a
 proveniência depois de fechar o editor.
+
+Elementos que o Remotion compõe sobre a cena devem usar `modo: "componente"`, não
+`cena`. Logos, ícones, stickers e adornos chegam como `artifact.png` com alpha
+validado; o Remotion faz a composição, sem chroma key. O adapter deve exigir
+`manifest.fundo`, `manifest.fundo.metricas` e um último veredito aprovado antes de
+marcar o `Asset` como `ready`. `arquivo_original_sha256` mantém a ligação auditável
+com `tentativa-NN-original.png`. Se `remover_fundo: "opcional"` produzir o aviso de
+runtime indisponível, trate o asset como não recortado e não o encaminhe à composição
+automática.
+Quando a remoção obrigatória não chega a produzir recorte, não existe `artifact.png`:
+`manifest.artefato_final` e `manifest.arquivo` valem `null`, com o motivo no manifesto.

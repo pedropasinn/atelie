@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 
 import type { StyleDef } from '../styles/catalog.types';
+import type { FundoLimites, FundoMotor } from './backgroundRemoval';
 import { compose } from './promptComposer';
 
-export type BriefMode = 'explicacao' | 'cena';
+export type BriefMode = 'explicacao' | 'cena' | 'componente';
 export type BriefQuality = 'low' | 'medium' | 'high';
+export type RemocaoFundo = 'obrigatorio' | 'opcional' | 'nao';
 
 export interface BriefSection {
   rotulo: string;
@@ -24,6 +26,14 @@ export interface StructuredBrief {
   texto_fora_da_imagem?: boolean;
   /** Permite texto além da allowlist no raster. O default é false. */
   texto_extra_permitido?: boolean;
+  /** Allowlist de texto para logos e outros componentes. */
+  texto_permitido?: string[];
+  /** Cor lisa pedida à geração antes da remoção. */
+  fundo_geracao?: string;
+  remover_fundo?: RemocaoFundo;
+  motor_fundo?: FundoMotor;
+  modelo_fundo?: string;
+  limites_fundo?: FundoLimites;
   /** Largura em que o artefato será efetivamente exibido. */
   largura_final_px?: number;
   secoes: BriefSection[];
@@ -71,11 +81,32 @@ function requiredString(value: unknown, field: string): string {
   return value.trim();
 }
 
+function normalizeFundoLimits(value: unknown): FundoLimites | undefined {
+  if (value == null) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('brief inválido: "limites_fundo" precisa ser um objeto');
+  }
+  const raw = value as Record<string, unknown>;
+  const campos: Array<keyof FundoLimites> = [
+    'fracao_transparente_min', 'fracao_transparente_max', 'borda_transparente_min',
+    'margem_minima_pct_min', 'fracao_maior_componente_min', 'halo_max',
+    'tolerancia_cor',
+  ];
+  const result: FundoLimites = {};
+  for (const campo of campos) {
+    if (raw[campo] == null) continue;
+    const numero = Number(raw[campo]);
+    if (!Number.isFinite(numero) || numero < 0) throw new Error(`brief inválido: limite "${campo}" precisa ser um número não negativo`);
+    result[campo] = numero;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
 /** Valida e preenche defaults sem aceitar campos de credencial. */
 export function normalizeBrief(value: unknown): StructuredBrief {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('brief inválido: esperado um objeto JSON');
   const raw = value as Record<string, unknown>;
-  const modo: BriefMode = raw.modo === 'cena' ? 'cena' : 'explicacao';
+  const modo: BriefMode = raw.modo === 'cena' || raw.modo === 'componente' ? raw.modo : 'explicacao';
   const requestedProvider = raw.provedor ?? raw.provider;
   if (requestedProvider != null && requestedProvider !== 'codex') {
     throw new Error(`brief inválido: provedor "${String(requestedProvider)}" não é suportado; use "codex"`);
@@ -117,6 +148,12 @@ export function normalizeBrief(value: unknown): StructuredBrief {
   if (titulo.length > MAX_LABEL_LENGTH) {
     throw new Error(`brief inválido: "titulo" pode ter no máximo ${MAX_LABEL_LENGTH} caracteres para permanecer legível`);
   }
+  const removerFundo: RemocaoFundo = raw.remover_fundo === 'opcional' || raw.remover_fundo === 'nao' ? raw.remover_fundo : 'obrigatorio';
+  const motorFundo: FundoMotor = raw.motor_fundo === 'cor-solida' || raw.motor_fundo === 'nenhum' ? raw.motor_fundo : 'rembg';
+  const modeloFundo = typeof raw.modelo_fundo === 'string' && raw.modelo_fundo.trim() ? raw.modelo_fundo.trim() : 'isnet-general-use';
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(modeloFundo)) {
+    throw new Error('brief inválido: "modelo_fundo" deve conter apenas a-z, 0-9, ponto, hífen ou sublinhado');
+  }
   return {
     titulo,
     objetivo: requiredString(raw.objetivo, 'objetivo'),
@@ -124,14 +161,24 @@ export function normalizeBrief(value: unknown): StructuredBrief {
     provedor: 'codex',
     estilos,
     texto_fora_da_imagem: modo === 'explicacao' && raw.texto_fora_da_imagem === true,
-    texto_extra_permitido: raw.texto_extra_permitido === true,
+    texto_extra_permitido: modo === 'componente' ? false : raw.texto_extra_permitido === true,
+    texto_permitido: modo === 'componente' ? stringArray(raw.texto_permitido) : undefined,
+    fundo_geracao: modo === 'componente'
+      ? typeof raw.fundo_geracao === 'string' && raw.fundo_geracao.trim() ? raw.fundo_geracao.trim() : '#00FF41'
+      : undefined,
+    remover_fundo: modo === 'componente' ? removerFundo : undefined,
+    motor_fundo: modo === 'componente' ? motorFundo : undefined,
+    modelo_fundo: modo === 'componente'
+      ? modeloFundo
+      : undefined,
+    limites_fundo: modo === 'componente' ? normalizeFundoLimits(raw.limites_fundo) : undefined,
     largura_final_px: raw.largura_final_px == null ? undefined : Math.round(larguraFinal),
     secoes,
     legendas_curtas: raw.legendas_curtas !== false,
     idioma: 'pt-BR',
     tamanho: typeof raw.tamanho === 'string' && raw.tamanho.trim() ? raw.tamanho.trim() : '2K',
     proporcao_estrita: typeof raw.proporcao_estrita === 'boolean' ? raw.proporcao_estrita : modo === 'explicacao',
-    ortografia_estrita: typeof raw.ortografia_estrita === 'boolean' ? raw.ortografia_estrita : modo === 'explicacao',
+    ortografia_estrita: typeof raw.ortografia_estrita === 'boolean' ? raw.ortografia_estrita : modo !== 'cena',
     qualidade,
     negativos: stringArray(raw.negativos),
     refs: stringArray(raw.refs),
@@ -171,6 +218,33 @@ function paletteInstruction(palette?: Record<string, string>): string {
 export function composeBriefPrompt(value: unknown, style: StyleDef): ComposedBrief {
   const brief = normalizeBrief(value);
   const avisos: string[] = [];
+  if (brief.modo === 'componente') {
+    const concepts = brief.secoes.flatMap((s) => [s.rotulo, ...s.itens]).join('; ');
+    const permitidas = brief.texto_permitido ?? [];
+    const regraTexto = permitidas.length
+      ? `As únicas strings permitidas são: ${permitidas.map(quote).join(', ')}. Não escreva nenhuma outra letra, número ou pseudotexto.`
+      : 'Não renderize texto, letras, números, legendas, logotipos, marcas-d’água ou pseudotexto.';
+    const request = [
+      `Crie um único componente visual: ${brief.objetivo}.`,
+      concepts ? `Características do objeto: ${concepts}.` : '',
+      paletteInstruction(brief.paleta),
+      'Mostre exatamente um objeto, inteiro, centralizado e isolado, com margem livre generosa em todos os lados.',
+      `Use fundo liso perfeitamente uniforme na cor ${brief.fundo_geracao}, sem textura, cenário, gradiente ou variação de iluminação. Não use essa cor em nenhuma parte do objeto.`,
+      'Não use sombra projetada, sombra chapada no chão nem elementos soltos ao redor do objeto.',
+      regraTexto,
+    ].filter(Boolean).join(' ');
+    const styled = compose(request, style, undefined, {
+      avoid: [...brief.negativos, 'fundo com gradiente', 'cenário', 'sombra projetada', 'objeto cortado', permitidas.length ? 'texto não autorizado' : 'texto'].join(', '),
+    });
+    return {
+      brief,
+      prompt: `${styled} REGRA PRIORITÁRIA DE COMPONENTE: objeto único e completo, centralizado com margem, fundo liso uniforme ${brief.fundo_geracao}, sem sombra projetada. ${regraTexto}`,
+      stringsVisiveis: permitidas,
+      ordensObrigatorias: [],
+      rotulosOverlay: [],
+      avisos,
+    };
+  }
   if (brief.modo === 'cena' || brief.texto_fora_da_imagem) {
     const concepts = brief.secoes.flatMap((s) => [s.rotulo, ...s.itens]).join('; ');
     const request = [
@@ -260,7 +334,9 @@ export function buildLegibilityRubric(composed: ComposedBrief, threshold = 7, la
   return [
     'Você é o juiz visual do Ateliê. O conteúdo textual já foi verificado separadamente; não transcreva nem compare a allowlist.',
     'Avalie legibilidade, hierarquia, composição, contraste, fidelidade visual e clareza semântica.',
-    composed.brief.modo === 'cena' || composed.brief.texto_fora_da_imagem
+    composed.brief.modo === 'componente'
+      ? 'Este é um componente sobre xadrez de transparência. Reprove resíduos de fundo, bordas serrilhadas ou com halo, objeto incompleto/cortado e sombra chapada ou projetada.'
+      : composed.brief.modo === 'cena' || composed.brief.texto_fora_da_imagem
       ? 'Esta imagem deve ter zero texto: reprove se houver qualquer letra, número, legenda, logotipo, marca-d’água ou pseudotexto.'
       : 'Reprove texto ilegível, cortado, sobreposto, microtexto, pseudotexto ou com ortografia/acentuação visivelmente errada.',
     'Reprove estruturas semanticamente vazias, repetitivas ou que não diferenciem os conceitos pedidos.',

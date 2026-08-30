@@ -58,7 +58,7 @@ export async function registerV1Routes(app: FastifyInstance, options: V1Options)
       descricao: style.desc,
       defaults: style.defaults,
     })),
-    modos: ['explicacao', 'cena'],
+    modos: ['explicacao', 'cena', 'componente'],
   }));
 
   app.post('/v1/jobs', { preHandler: protectedRoute }, async (request, reply) => {

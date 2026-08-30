@@ -2,7 +2,7 @@ export interface CompararConteudoOptions {
   textoExtraPermitido?: boolean;
   texto_extra_permitido?: boolean;
   zeroTexto?: boolean;
-  modo?: 'explicacao' | 'cena';
+  modo?: 'explicacao' | 'cena' | 'componente';
   texto_fora_da_imagem?: boolean;
   ortografiaEstrita?: boolean;
   ortografia_estrita?: boolean;

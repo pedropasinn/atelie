@@ -61,7 +61,9 @@ passam por redação de padrões de credencial.
 }
 ```
 
-- `modo`: `explicacao` produz infográfico com texto controlado; `cena` proíbe texto.
+- `modo`: `explicacao` produz infográfico com texto controlado; `cena` proíbe texto;
+  `componente` gera um único logo, ícone, sticker ou elemento isolado e valida seu
+  recorte antes dos juízes multimodais.
 - `provedor`: opcional, aceita somente `codex`. Qualquer outro id recebe `400
   invalid_brief`; não existe normalização silenciosa.
 - `estilo` ou `estilos` é obrigatório. Um artefato final é produzido por estilo.
@@ -76,17 +78,71 @@ passam por redação de padrões de credencial.
   na ordem declarada.
 - `iteracoes` é o número de novas tentativas depois da primeira geração.
 - `proporcao_estrita` controla o gate das dimensões reais: o default é `true` em
-  `explicacao` e `false` em `cena`. Aliases comparam orientação; `WxH` compara a
+  `explicacao` e `false` em `cena`/`componente`. Aliases comparam orientação; `WxH` compara a
   razão largura/altura com tolerância relativa de 5%; `2K` e valores sem proporção
   explícita não impõem geometria. Uma divergência estrita reprova a tentativa e
   acrescenta uma instrução obrigatória de formato à próxima geração.
 - `ortografia_estrita` reprova diferenças de letras ou acentos encontradas pelo
-  juiz de conteúdo; o default é `true` em `explicacao` e `false` em `cena`.
+  juiz de conteúdo; o default é `true` em `explicacao`/`componente` e `false` em `cena`.
 - `qualidade` assume `medium`, que é a política econômica das integrações.
 - Em `explicacao`, entram no máximo 12 strings visíveis, cada uma com até 42
   caracteres. Conteúdo excedente vira conceito visual, não microtexto.
 - Rótulos entram entre aspas e o juiz reprova ilegibilidade, pseudotexto, ortografia
   ou acentuação incorreta. Em `cena`, qualquer texto reprova.
+
+Um componente pode ser pedido assim:
+
+```json
+{
+  "titulo": "Marca da coruja",
+  "objetivo": "Criar uma coruja geométrica azul",
+  "modo": "componente",
+  "estilo": "logo-icone",
+  "texto_permitido": ["ATELIÊ"],
+  "fundo_geracao": "#00FF41",
+  "remover_fundo": "obrigatorio",
+  "motor_fundo": "rembg",
+  "modelo_fundo": "isnet-general-use",
+  "limites_fundo": { "margem_minima_pct_min": 2.0, "halo_max": 0.06 },
+  "secoes": [],
+  "idioma": "pt-BR",
+  "qualidade": "medium",
+  "negativos": [],
+  "refs": [],
+  "iteracoes": 1
+}
+```
+
+O prompt de `componente` exige objeto único, completo, centralizado, com margem,
+fundo liso (`#00FF41` por default) e sem sombra projetada. Esse verde-chroma é
+saturado, costuma ser renderizado de forma lisa pelo gpt-image-2 e é raro em logos;
+o prompt proíbe essa cor no próprio objeto. `texto_permitido` é uma
+allowlist: seus itens podem aparecer, mas texto fora dela reprova. `remover_fundo`
+aceita `obrigatorio` (default), `opcional` ou `nao`; os motores são `rembg`
+(default), `cor-solida` e `nenhum`. Se o estilo já usa `transparent generate`, o
+alpha nativo é validado com `nenhum` antes da remoção configurada. Indisponibilidade
+em modo obrigatório reprova; em modo opcional gera aviso e preserva o original.
+Os limites opcionais correspondem às métricas documentadas no recibo.
+`limites_fundo.tolerancia_cor` ajusta o motor `cor-solida`. Esse motor não pode
+distinguir pixels do objeto idênticos ao fundo: `fracao_objeto_cor_de_fundo`
+reprova remoções suspeitas acima de 3% da área do objeto dentro do fecho convexo,
+mas regiões externas indistinguíveis ainda exigem outra cor ou o motor `rembg`.
+Sem override, a tentativa exige fração transparente entre 10% e 95%, ao menos 95%
+do anel externo transparente, margem mínima de 1,5%, maior componente com ao menos
+85% da área relevante e halo de no máximo 5%. `halo` é a quantidade de pixels
+semitransparentes (`10 <= alpha < 245`) fora da dilatação de 2 px dos pixels opacos
+(`alpha >= 245`), dividida pela área do objeto (`alpha >= 10`). A borda antialias
+normal dentro dessa faixa não é penalizada. Componentes menores que 0,5% da área
+do objeto são ignorados no gate de fragmentos, com conectividade 8. Acima do teto
+de transparência, o diagnóstico informa a ocupação do objeto e pede que ele cresça.
+
+O subprocesso tem timeout de 120 s, configurável por `ATELIE_FUNDO_TIMEOUT_MS`.
+O primeiro uso de `rembg` pode baixar o modelo; aumente o timeout ou pré-instale-o.
+`ATELIE_FUNDO_SCRIPT` sobrescreve a resolução automática, que também procura em
+`resources/fundo/remover_fundo.py`, na raiz do repo e no diretório atual.
+
+Em medição local com CPU, o `rembg` `isnet-general-use` processou o fixture de logo
+sintético de 1024×1024 em 4,513 s.
 
 ## Endpoints
 
@@ -118,7 +174,8 @@ vazio é aceito.
 ### `GET /v1/jobs/{id}/artifact/{n}`
 
 Entrega o PNG final; `n` começa em `1`. O arquivo é resolvido pelo registro do job,
-sem aceitar caminho fornecido pelo cliente.
+sem aceitar caminho fornecido pelo cliente. Retorna `404` se uma remoção obrigatória
+não produziu recorte e, portanto, não existe artefato final.
 
 ### `GET /v1/styles`
 
@@ -130,10 +187,14 @@ Health leve, sem sondar CLIs nem consumir tokens.
 
 ## Recibo de proveniência
 
-Cada pasta `artifact-NNN/` contém `artifact.png`, tentativas e `manifest.json` no
+Cada pasta `artifact-NNN/` contém tentativas e `manifest.json` no
 schema `atelie.provenance/v1`: versão do Ateliê, prompt final, estilo,
 provedor/modelo reais, parâmetros, rótulos de overlay, histórico de vereditos com
 duração de geração/julgamento, SHA-256, bytes e dimensões lidas do IHDR do PNG.
+Quando há saída, também contém `artifact.png`, `artefato_final` aponta para ele e
+`arquivo` traz seus dados. Se a remoção obrigatória não produzir recorte, ambos
+valem `null`, `motivo_sem_artefato_final` explica a ausência e o original opaco
+permanece somente como `tentativa-NN-original.png`.
 Recibos gravados desde 0.2.2 trazem `tamanho_solicitado` e `proporcao` na raiz;
 esses campos são opcionais na leitura porque recibos 0.2.1 em disco não os têm.
 Cada item de `vereditos` repete o resultado `proporcao` da tentativa; divergências flexíveis
@@ -145,6 +206,16 @@ de `faltantes`, `extras`, `numeracao`, `ortografia`, `ordem_incorreta` e o juiz 
 `visual` contém o parecer visual ou `null` quando houve veto textual. O objeto
 `parametros` registra `texto_extra_permitido`, `largura_final_px`,
 `proporcao_estrita` e `ortografia_estrita`.
+
+Em `modo: "componente"`, cada tentativa e a raiz do manifesto do artefato trazem
+`fundo: {solicitado,motor,modelo,removido,alpha_validado,metricas,problemas,arquivo_original_sha256}`.
+`metricas` contém `fracao_transparente`, `fracao_opaca`,
+`fracao_semitransparente`, `borda_transparente`, `bbox`, `margem_minima_pct`,
+`componentes_conexos`, `fracao_maior_componente`, `fracao_objeto_cor_de_fundo`, `faixa_antialias_px`,
+`fracao_semitransparente_fora_da_faixa` e `halo` (ou `null` quando o motor está
+indisponível). `fracao_semitransparente_fora_da_faixa` e `halo` expressam a mesma
+razão auditável definida acima. O PNG gerado fica como `tentativa-NN-original.png`; o recortado,
+sua composição xadrez de inspeção e o `artifact.png` com alpha ficam ao lado.
 
 Por consequência, `GET /v1/jobs/{id}` ecoa em
 `resultado.artefatos[].manifest.vereditos[].conteudo.transcricao` todo texto visível
