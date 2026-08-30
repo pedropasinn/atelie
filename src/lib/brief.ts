@@ -9,6 +9,7 @@ export type BriefQuality = 'low' | 'medium' | 'high';
 export interface BriefSection {
   rotulo: string;
   itens: string[];
+  ordem_obrigatoria?: boolean;
 }
 
 export interface StructuredBrief {
@@ -21,6 +22,10 @@ export interface StructuredBrief {
   estilos?: string[];
   /** Em explicações, gera só a camada visual e devolve os rótulos no manifest. */
   texto_fora_da_imagem?: boolean;
+  /** Permite texto além da allowlist no raster. O default é false. */
+  texto_extra_permitido?: boolean;
+  /** Largura em que o artefato será efetivamente exibido. */
+  largura_final_px?: number;
   secoes: BriefSection[];
   legendas_curtas: boolean;
   idioma: 'pt-BR';
@@ -37,6 +42,7 @@ export interface ComposedBrief {
   brief: StructuredBrief;
   prompt: string;
   stringsVisiveis: string[];
+  ordensObrigatorias: string[][];
   rotulosOverlay: OverlayLabel[];
   avisos: string[];
 }
@@ -81,7 +87,11 @@ export function normalizeBrief(value: unknown): StructuredBrief {
       throw new Error(`brief inválido: seção ${index + 1} precisa ser um objeto`);
     }
     const s = section as Record<string, unknown>;
-    return { rotulo: requiredString(s.rotulo, `secoes[${index}].rotulo`), itens: stringArray(s.itens) };
+    return {
+      rotulo: requiredString(s.rotulo, `secoes[${index}].rotulo`),
+      itens: stringArray(s.itens),
+      ordem_obrigatoria: s.ordem_obrigatoria === true,
+    };
   });
 
   const estilo = typeof raw.estilo === 'string' && raw.estilo.trim() ? raw.estilo.trim() : undefined;
@@ -95,6 +105,10 @@ export function normalizeBrief(value: unknown): StructuredBrief {
     : undefined;
 
   const iteracoes = Number(raw.iteracoes);
+  const larguraFinal = Number(raw.largura_final_px);
+  if (raw.largura_final_px != null && (!Number.isFinite(larguraFinal) || larguraFinal < 1)) {
+    throw new Error('brief inválido: "largura_final_px" precisa ser um número positivo em pixels');
+  }
   const titulo = requiredString(raw.titulo, 'titulo');
   if (titulo.length > MAX_LABEL_LENGTH) {
     throw new Error(`brief inválido: "titulo" pode ter no máximo ${MAX_LABEL_LENGTH} caracteres para permanecer legível`);
@@ -106,6 +120,8 @@ export function normalizeBrief(value: unknown): StructuredBrief {
     provedor: 'codex',
     estilos,
     texto_fora_da_imagem: modo === 'explicacao' && raw.texto_fora_da_imagem === true,
+    texto_extra_permitido: raw.texto_extra_permitido === true,
+    largura_final_px: raw.largura_final_px == null ? undefined : Math.round(larguraFinal),
     secoes,
     legendas_curtas: raw.legendas_curtas !== false,
     idioma: 'pt-BR',
@@ -165,6 +181,7 @@ export function composeBriefPrompt(value: unknown, style: StyleDef): ComposedBri
       brief,
       prompt: `${styled} REGRA PRIORITÁRIA: zero texto visível; ignore qualquer sugestão do estilo sobre títulos, rótulos, números ou tipografia.`,
       stringsVisiveis: [],
+      ordensObrigatorias: [],
       rotulosOverlay: brief.texto_fora_da_imagem ? overlayLabels(brief) : [],
       avisos,
     };
@@ -177,12 +194,19 @@ export function composeBriefPrompt(value: unknown, style: StyleDef): ComposedBri
   if (short.length > MAX_VISIBLE_STRINGS) avisos.push(`somente ${MAX_VISIBLE_STRINGS} strings serão exibidas para preservar legibilidade`);
 
   const rendered = new Set(stringsVisiveis);
+  const ordensObrigatorias = brief.secoes
+    .filter((section) => section.ordem_obrigatoria)
+    .map((section) => section.itens.filter((item) => rendered.has(item)))
+    .filter((ordem) => ordem.length > 1);
   const sections = brief.secoes.map((section, index) => {
     const visibleItems = section.itens.filter((item) => rendered.has(item));
     const visualItems = section.itens.filter((item) => !rendered.has(item));
     return [
       `Seção ${index + 1}: ${rendered.has(section.rotulo) ? quote(section.rotulo) : section.rotulo}.`,
       visibleItems.length ? `Rótulos literais: ${visibleItems.map(quote).join(', ')}.` : '',
+      section.ordem_obrigatoria && visibleItems.length > 1
+        ? `Ordem visual obrigatória: ${visibleItems.map(quote).join(' → ')}.`
+        : '',
       visualItems.length ? `Represente visualmente, sem escrever: ${visualItems.join('; ')}.` : '',
     ].filter(Boolean).join(' ');
   }).join(' ');
@@ -201,6 +225,7 @@ export function composeBriefPrompt(value: unknown, style: StyleDef): ComposedBri
     brief,
     prompt: compose(request, style, undefined, { avoid: [...brief.negativos, 'microtexto', 'texto ilegível', 'caracteres inventados'].join(', ') }),
     stringsVisiveis,
+    ordensObrigatorias,
     rotulosOverlay: [],
     avisos,
   };
@@ -221,16 +246,19 @@ export function briefHash(value: unknown): string {
   return createHash('sha256').update(canonicalBrief(value)).digest('hex');
 }
 
-export function buildLegibilityRubric(composed: ComposedBrief, threshold = 7): string {
-  const textRule = composed.brief.modo === 'cena' || composed.brief.texto_fora_da_imagem
-    ? 'A imagem deve conter ZERO texto. Reprove se houver letras, números, pseudotexto, logotipo ou marca-d’água.'
-    : `Confira literalmente estas strings: ${composed.stringsVisiveis.map(quote).join(', ')}. Reprove se qualquer uma estiver ilegível, ausente quando central, com ortografia/acentuação errada ou se houver pseudotexto/microtexto não pedido.`;
+export function buildLegibilityRubric(composed: ComposedBrief, threshold = 7, larguraOriginalPx?: number): string {
+  const larguraFinal = composed.brief.largura_final_px;
+  const legibilidadeFinal = larguraFinal
+    ? `A imagem será exibida com ${larguraFinal} px de largura${larguraOriginalPx ? ` (fator de redução final/original ${(larguraFinal / larguraOriginalPx).toFixed(3)})` : ''}; reprove se algum texto ficaria abaixo de aproximadamente 12 px de altura nesse tamanho final.`
+    : '';
   return [
-    'Você é o juiz de legibilidade e fidelidade visual do Ateliê.',
-    textRule,
+    'Você é o juiz visual do Ateliê. O conteúdo textual já foi verificado separadamente; não transcreva nem compare a allowlist.',
+    'Avalie legibilidade, hierarquia, composição, contraste, fidelidade visual e clareza semântica.',
+    'Reprove estruturas semanticamente vazias, repetitivas ou que não diferenciem os conceitos pedidos.',
+    legibilidadeFinal,
     `Avalie também se a imagem cumpre o objetivo: ${quote(composed.brief.objetivo)}.`,
-    `Aprovação exige nota >= ${threshold} e nenhuma falha de legibilidade ou ortografia.`,
+    `Aprovação exige nota >= ${threshold} e nenhuma falha de legibilidade visual.`,
     'Responda APENAS JSON no schema {aprovado,nota,alinhamento,problemas,sugestao_melhoria,prompt_sugerido}.',
     'problemas é array de strings; sugestao_melhoria é uma instrução acionável; prompt_sugerido é um prompt completo para regenerar.',
-  ].join(' ');
+  ].filter(Boolean).join(' ');
 }

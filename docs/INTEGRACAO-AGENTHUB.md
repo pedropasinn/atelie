@@ -50,6 +50,59 @@ conteúdo, não uma promessa de coordenadas; o layout do overlay continua sob
 responsabilidade do template do consumidor. O juiz do Ateliê reprova qualquer
 texto acidental na camada raster.
 
+## Juiz de conteúdo e juiz visual
+
+Quando o raster contém rótulos, o Ateliê usa `stringsVisiveis` como allowlist. O
+primeiro VLM não dá nota: ele apenas transcreve o que vê no JSON
+`{textos: string[]}`, em ordem visual de leitura quando necessário. O motor normaliza
+caixa, acentos, espaços e pontuação externa, tolera pequenas diferenças de OCR e faz
+a comparação em código. Numeração isolada, como `1`, `B1` e `H3`, é registrada à
+parte e não conta como texto extra.
+
+Por default, rótulo ausente ou texto fora da allowlist veta uma tentativa em
+`modo: "explicacao"`. `texto_extra_permitido: true` libera somente os extras; rótulos
+ausentes continuam críticos. Em `modo: "cena"` e com
+`texto_fora_da_imagem: true`, qualquer transcrição, inclusive numeração, é crítica.
+Uma seção com `ordem_obrigatoria: true` também é vetada quando seus itens aparecem
+fora da ordem declarada.
+
+O juiz visual só recebe imagens aprovadas pelo conteúdo. Ele avalia composição,
+contraste, clareza semântica e legibilidade, sem refazer a comparação textual. Se o
+brief trouxer `largura_final_px`, a rubrica informa a largura de exibição e o fator de
+redução; texto com menos de aproximadamente 12 px de altura no tamanho final deve ser
+reprovado.
+
+O recibo preserva os campos existentes e acrescenta a separação por tentativa:
+
+```json
+{
+  "parametros": {
+    "largura_final_px": 800,
+    "texto_extra_permitido": false
+  },
+  "vereditos": [
+    {
+      "conteudo": {
+        "aprovado": false,
+        "faltantes": ["DECISÃO"],
+        "extras": ["RESULTADOS GARANTIDOS"],
+        "numeracao": ["1"],
+        "ordem_incorreta": [],
+        "problemas": [
+          "texto não autorizado: RESULTADOS GARANTIDOS",
+          "rótulo ausente: DECISÃO"
+        ]
+      },
+      "visual": null
+    }
+  ]
+}
+```
+
+`visual: null` informa que o veto de conteúdo impediu a segunda chamada. Na tentativa
+seguinte, o prompt recebe a allowlist como proibição explícita e repete os rótulos
+obrigatórios ausentes. Uma nota visual alta nunca substitui esse aceite.
+
 ## TUI e relatórios
 
 O arquivo canônico continua sendo o PNG. Para embutir no TUI/HTML, o consumidor

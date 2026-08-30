@@ -68,9 +68,24 @@ mesmo job. Cada artefato recebe um `manifest.json` com prompt final, provedor/mo
 parâmetros, histórico dos juízes, SHA-256 e métricas disponíveis.
 
 O brief tem dois modos: `explicacao`, para infográficos com no máximo 12 strings
-curtas e juiz de ortografia/legibilidade; e `cena`, para imagens sem texto destinadas
+curtas; e `cena`, para imagens sem texto destinadas
 a peças. Em `explicacao`, `texto_fora_da_imagem: true` também gera raster sem texto
 e devolve rótulos para overlay HTML/SVG. A qualidade padrão é `medium`.
+
+No motor de brief estruturado, o julgamento ocorre em duas etapas. Primeiro, o VLM
+apenas transcreve todo o texto visível como `{textos: string[]}`. O código compara essa
+transcrição com a allowlist `stringsVisiveis`; rótulo ausente, texto não autorizado ou
+ordem obrigatória divergente vetam a tentativa. Em `cena` e com
+`texto_fora_da_imagem: true`, qualquer texto transcrito causa veto. O juiz visual só
+roda depois desse aceite e avalia composição, clareza semântica e legibilidade. Sua
+nota nunca compensa um veto de conteúdo.
+
+`texto_extra_permitido: true` desliga apenas o veto de extras em `explicacao`; o default
+é `false`. `ordem_obrigatoria: true` em uma seção exige que seus itens apareçam na
+ordem declarada. `largura_final_px` informa a largura real de exibição para o juiz
+visual reprovar texto que ficaria abaixo de aproximadamente 12 px. O manifesto grava
+`largura_final_px` em `parametros` e, em cada tentativa, os campos aditivos `conteudo`
+e `visual`; `visual` vale `null` quando o conteúdo impede sua execução.
 
 Contratos e exemplos:
 
