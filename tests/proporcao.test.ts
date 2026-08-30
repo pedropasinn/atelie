@@ -65,6 +65,7 @@ async function main(): Promise<void> {
   const motorEstrito = criarMotor({
     rootDir: path.join(ROOT, 'estrito'),
     dependencies: {
+      transcribe: async (input) => ({ transcricao: input.composed.stringsVisiveis, provider: 'fake', model: 'fake-transcriber' }),
       generate: async (input) => {
         tentativasEstritas++;
         promptsEstritos.push(input.prompt);
@@ -94,6 +95,7 @@ async function main(): Promise<void> {
   const motorEstritoEsgotado = criarMotor({
     rootDir: path.join(ROOT, 'estrito-esgotado'),
     dependencies: {
+      transcribe: async (input) => ({ transcricao: input.composed.stringsVisiveis, provider: 'fake', model: 'fake-transcriber' }),
       generate: async (input) => {
         fs.mkdirSync(path.dirname(input.outPath), { recursive: true });
         fs.writeFileSync(input.outPath, pngHeader(320, 640));
@@ -114,6 +116,7 @@ async function main(): Promise<void> {
   const motorFlexivel = criarMotor({
     rootDir: path.join(ROOT, 'flexivel'),
     dependencies: {
+      transcribe: async (input) => ({ transcricao: input.composed.stringsVisiveis, provider: 'fake', model: 'fake-transcriber' }),
       generate: async (input) => {
         tentativasFlexiveis++;
         fs.mkdirSync(path.dirname(input.outPath), { recursive: true });

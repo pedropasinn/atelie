@@ -10,6 +10,7 @@ const brief: StructuredBrief = {
   objetivo: 'Explicar o caminho de uma solicitação até a decisão auditável.',
   modo: 'explicacao',
   texto_fora_da_imagem: true,
+  largura_final_px: 800,
   estilo: 'infografico-bento',
   secoes: [
     { rotulo: 'ENTRADA', itens: ['pedido', 'limites'] },

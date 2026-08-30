@@ -51,8 +51,22 @@ atelie --judge-file <png> --request "..." [--style <id>] [--model sonnet]
 ```
 
 O SDK TypeScript está em `atelie/sdk`; o contrato HTTP e o schema do brief estão em
-`docs/API-V1.md`. Testes e integrações devem injetar provedor fake no `criarMotor`,
-sem gerar imagens reais.
+`docs/API-V1.md`. Testes e integrações devem injetar fakes para `generate`,
+`transcribe` e `judge` no `criarMotor`, sem gerar imagens reais nem chamar VLMs.
+
+No brief estruturado, use `largura_final_px` quando souber a largura de exibição. Uma
+seção pode declarar `ordem_obrigatoria: true`; nesse caso, seus itens precisam aparecer
+na ordem informada. Texto fora de `stringsVisiveis` reprova a tentativa por default.
+Somente em `modo: "explicacao"`, `texto_extra_permitido: true` libera extras. Em
+`modo: "cena"` ou com `texto_fora_da_imagem: true`, qualquer texto continua proibido.
+
+O motor chama primeiro o transcritor de conteúdo, que devolve apenas
+`{textos: string[]}`. A comparação e o veto são determinísticos. O juiz visual recebe a
+imagem apenas depois de o conteúdo passar e considera a legibilidade em
+`largura_final_px`, com referência mínima de aproximadamente 12 px de altura para
+texto. Cada item de `manifest.vereditos` mantém o veredito compatível e acrescenta
+`conteudo` e `visual`; `visual: null` indica que o veto encerrou a tentativa antes da
+avaliação visual.
 
 O Codex pode devolver proporção diferente da pedida em `--size`. No motor de brief,
 aliases (`square`, `portrait`, `landscape`/`wide`) são conferidos por orientação e

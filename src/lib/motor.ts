@@ -8,6 +8,7 @@ import { briefHash, briefStyles, buildLegibilityRubric, composeBriefPrompt, norm
 import { resolveGenProvider } from './genProviders';
 import { askImagesRaw } from './judgeProviders';
 import { coerce } from './judge';
+import { buildContentTranscriptionRubric, coerceTranscricao, compararConteudo, type ResultadoConteudo } from './juizConteudo';
 import { extractJson } from './jsonx';
 import { cliEnabled, loadSettings } from './settings';
 import { findStyle } from './userStyles';
@@ -49,8 +50,22 @@ export interface MotorJudgeOutput {
   model: string;
 }
 
+export interface MotorContentJudgeInput {
+  pngPath: string;
+  composed: ComposedBrief;
+  signal?: AbortSignal;
+}
+
+export interface MotorContentJudgeOutput {
+  transcricao: string[];
+  provider: string;
+  model: string;
+  erro?: string;
+}
+
 export interface MotorDependencies {
   generate(input: MotorGenerationInput): Promise<MotorGenerationOutput>;
+  transcribe(input: MotorContentJudgeInput): Promise<MotorContentJudgeOutput>;
   judge(input: MotorJudgeInput): Promise<MotorJudgeOutput>;
   now(): Date;
 }
@@ -164,21 +179,60 @@ async function defaultGenerate(input: MotorGenerationInput): Promise<MotorGenera
   };
 }
 
-async function defaultJudge(input: MotorJudgeInput): Promise<MotorJudgeOutput> {
+function judgeSpec() {
   const settings = loadSettings();
   const spec = cliEnabled(settings.singleJudge.provider, settings)
     ? settings.singleJudge
     : settings.judgePanel.find((candidate) => cliEnabled(candidate.provider, settings));
   if (!spec) throw new Error('nenhum juiz de legibilidade está habilitado');
+  return { settings, spec };
+}
+
+async function defaultTranscribe(input: MotorContentJudgeInput): Promise<MotorContentJudgeOutput> {
+  const { spec } = judgeSpec();
+  const rubric = buildContentTranscriptionRubric(input.composed.ordensObrigatorias.length > 0);
+  const raw = await askImagesRaw(spec, [input.pngPath], rubric, input.signal);
+  const parsed = coerceTranscricao(extractJson(raw), raw);
+  return { transcricao: parsed.textos, provider: spec.provider, model: spec.model, erro: parsed.erro };
+}
+
+async function defaultJudge(input: MotorJudgeInput): Promise<MotorJudgeOutput> {
+  const { settings, spec } = judgeSpec();
   const threshold = settings.approveThreshold;
-  const rubric = buildLegibilityRubric(input.composed, threshold);
+  const rubric = buildLegibilityRubric(input.composed, threshold, pngDimensions(input.pngPath).largura);
   const raw = await askImagesRaw(spec, [input.pngPath], rubric, input.signal);
   const verdict = coerce(extractJson(raw), raw, threshold);
-  // Falha textual é impeditiva mesmo se o modelo marcou `aprovado:true` por engano.
-  if (input.composed.brief.modo !== 'cena' && verdict.problemas.some((p) => /ileg[ií]vel|ortografi|acentua|microtexto|pseudotexto/i.test(p))) {
-    verdict.aprovado = false;
-  }
   return { verdict, provider: spec.provider, model: spec.model };
+}
+
+function contentProblems(
+  result: ResultadoConteudo,
+  composed: ComposedBrief,
+  erro?: string,
+): string[] {
+  if (erro) return [erro];
+  const zeroTexto = composed.brief.modo === 'cena' || composed.brief.texto_fora_da_imagem;
+  const problemas: string[] = [];
+  if (zeroTexto || !composed.brief.texto_extra_permitido) {
+    for (const extra of [...result.extras, ...(zeroTexto ? result.numeracao : [])]) {
+      problemas.push(`texto não autorizado: ${extra}`);
+    }
+  }
+  for (const faltante of result.faltantes) problemas.push(`rótulo ausente: ${faltante}`);
+  for (const ordem of result.ordemIncorreta) problemas.push(`ordem obrigatória divergente: ${ordem.join(' → ')}`);
+  return problemas;
+}
+
+function contentVeto(problemas: string[], composed: ComposedBrief): Verdict {
+  const faltantes = problemas.filter((problema) => problema.startsWith('rótulo ausente:'));
+  return {
+    aprovado: false,
+    nota: null,
+    alinhamento: 'conteúdo textual reprovado por regra determinística',
+    problemas,
+    sugestao_melhoria: faltantes.length ? 'incluir todos os rótulos obrigatórios sem acrescentar texto' : 'remover todo texto não autorizado',
+    prompt_sugerido: composed.prompt,
+  };
 }
 
 function finalVerdict(artifacts: GeneratedArtifact[]): Verdict {
@@ -208,6 +262,7 @@ export class AtelieMotor {
     this.rootDir = options.rootDir ?? path.join(SESSIONS_ROOT, 'jobs');
     this.deps = {
       generate: options.dependencies?.generate ?? defaultGenerate,
+      transcribe: options.dependencies?.transcribe ?? defaultTranscribe,
       judge: options.dependencies?.judge ?? defaultJudge,
       now: options.dependencies?.now ?? (() => new Date()),
     };
@@ -270,9 +325,31 @@ export class AtelieMotor {
         const dimensoes = pngDimensions(generated.pngPath);
         const proporcao = verificarProporcao(brief.tamanho, dimensoes);
         assertNotAborted(options.signal);
-        options.onProgress?.({ etapa: 'julgando', estilo: styleId, artefato: artifactN, tentativa: attempt, concluidos: styleIndex, total: styleIds.length, mensagem: `avaliando legibilidade de ${styleId}` });
+        options.onProgress?.({ etapa: 'julgando', estilo: styleId, artefato: artifactN, tentativa: attempt, concluidos: styleIndex, total: styleIds.length, mensagem: `transcrevendo conteúdo de ${styleId}` });
         const judgmentStarted = Date.now();
-        judged = await this.deps.judge({ pngPath: generated.pngPath, composed: { ...composed, prompt }, signal: options.signal });
+        const attemptComposed = { ...composed, prompt };
+        const contentJudged = await this.deps.transcribe({ pngPath: generated.pngPath, composed: attemptComposed, signal: options.signal });
+        const zeroTexto = brief.modo === 'cena' || brief.texto_fora_da_imagem;
+        const compared = compararConteudo(contentJudged.transcricao, composed.stringsVisiveis, {
+          textoExtraPermitido: brief.texto_extra_permitido,
+          zeroTexto,
+          ordensObrigatorias: composed.ordensObrigatorias,
+        });
+        const contentResult = contentJudged.erro ? { ...compared, ok: false } : compared;
+        const problemasConteudo = contentProblems(contentResult, composed, contentJudged.erro);
+        let visualJudged: MotorJudgeOutput | null = null;
+        if (contentResult.ok) {
+          options.onProgress?.({ etapa: 'julgando', estilo: styleId, artefato: artifactN, tentativa: attempt, concluidos: styleIndex, total: styleIds.length, mensagem: `avaliando visual de ${styleId}` });
+          visualJudged = await this.deps.judge({ pngPath: generated.pngPath, composed: attemptComposed, signal: options.signal });
+          judged = visualJudged;
+        } else {
+          judged = {
+            verdict: contentVeto(problemasConteudo, attemptComposed),
+            provider: contentJudged.provider,
+            model: contentJudged.model,
+          };
+        }
+        // Proporção: veto em modo estrito, aviso em modo flexível; nunca compensa o veto de conteúdo.
         const avisoProporcao = proporcao.ok ? undefined : proporcaoDivergente(brief.tamanho, dimensoes, proporcao);
         judged = {
           ...judged,
@@ -296,16 +373,43 @@ export class AtelieMotor {
           { provider: judged.provider, model: judged.model },
           this.deps.now().toISOString(),
           { totalMs: Date.now() - attemptStarted, generationMs, judgmentMs },
+          {
+            conteudo: contentResult,
+            transcricao: contentJudged.transcricao,
+            problemasConteudo,
+            juizConteudo: { provider: contentJudged.provider, model: contentJudged.model },
+            visual: visualJudged ? {
+              verdict: visualJudged.verdict,
+              judge: { provider: visualJudged.provider, model: visualJudged.model },
+            } : null,
+          },
         ));
         if (judged.verdict.aprovado || attempt === maxAttempts) break;
-        prompt = [
-          judged.verdict.prompt_sugerido.trim() || prompt,
-          judged.verdict.sugestao_melhoria.trim() ? `AJUSTE OBRIGATÓRIO: ${judged.verdict.sugestao_melhoria.trim()}.` : '',
-          brief.modo === 'cena' || brief.texto_fora_da_imagem
-            ? 'Mantenha a imagem sem qualquer texto.'
-            : `Mantenha exatamente estas strings e nenhuma outra: ${composed.stringsVisiveis.map((s) => `"${s}"`).join(', ')}. Sem microtexto.`,
-          brief.proporcao_estrita && !proporcao.ok ? instrucaoProporcao(brief.tamanho, proporcao) : '',
-        ].filter(Boolean).join(' ');
+        const instrucaoFormato = brief.proporcao_estrita && !proporcao.ok ? instrucaoProporcao(brief.tamanho, proporcao) : '';
+        if (!contentResult.ok) {
+          prompt = [
+            prompt,
+            zeroTexto
+              ? 'PROIBIDO: qualquer texto visível, inclusive números, logotipos, marcas-d’água e pseudotexto.'
+              : !brief.texto_extra_permitido
+                ? `PROIBIDO: qualquer texto além de: ${composed.stringsVisiveis.map((s) => `"${s}"`).join(', ')}.`
+                : '',
+            contentResult.faltantes.length
+              ? `OBRIGATÓRIO incluir: ${contentResult.faltantes.map((s) => `"${s}"`).join(', ')}.`
+              : '',
+            contentResult.ordemIncorreta.map((ordem) => `ORDEM OBRIGATÓRIA: ${ordem.map((s) => `"${s}"`).join(' → ')}.`).join(' '),
+            instrucaoFormato,
+          ].filter(Boolean).join(' ');
+        } else {
+          prompt = [
+            judged.verdict.prompt_sugerido.trim() || prompt,
+            judged.verdict.sugestao_melhoria.trim() ? `AJUSTE OBRIGATÓRIO: ${judged.verdict.sugestao_melhoria.trim()}.` : '',
+            zeroTexto
+              ? 'Mantenha a imagem sem qualquer texto.'
+              : `Mantenha exatamente estas strings e nenhuma outra: ${composed.stringsVisiveis.map((s) => `"${s}"`).join(', ')}. Sem microtexto.`,
+            instrucaoFormato,
+          ].filter(Boolean).join(' ');
+        }
       }
 
       if (!generated || !judged) throw new Error(`geração do estilo "${styleId}" não produziu resultado`);

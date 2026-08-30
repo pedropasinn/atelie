@@ -92,6 +92,11 @@ async function main(): Promise<void> {
         fs.writeFileSync(input.outPath, PNG);
         return { pngPath: input.outPath, provider: 'fake', model: 'fake-image-1', durationMs: 2, costUsd: 0 };
       },
+      transcribe: async (input) => ({
+        transcricao: input.composed.stringsVisiveis,
+        provider: 'fake',
+        model: 'fake-transcriber-1',
+      }),
       judge: async () => {
         judgments++;
         const approved = judgments >= 2;
@@ -125,6 +130,7 @@ async function main(): Promise<void> {
         fs.writeFileSync(input.outPath, PNG);
         return { pngPath: input.outPath, provider: 'fake', model: 'fake-image-1', costUsd: 0 };
       },
+      transcribe: async (input) => ({ transcricao: input.composed.stringsVisiveis, provider: 'fake', model: 'fake-transcriber-1' }),
       judge: async () => ({ provider: 'fake', model: 'fake-judge-1', verdict: { aprovado: true, nota: 9, alinhamento: 'ok', problemas: [], sugestao_melhoria: '', prompt_sugerido: '' } }),
       now: () => new Date('2026-08-29T12:00:00.000Z'),
     },
@@ -229,6 +235,7 @@ async function main(): Promise<void> {
     ok(manifest?.arquivo.dimensoes.largura === 320 && manifest.arquivo.dimensoes.altura === 640, 'D5: manifest lê dimensões reais do IHDR');
     ok(manifest?.metricas.custo_usd === 0 && manifest.metricas.custo_tipo === 'informado', 'D5: manifest sempre preenche custo_usd e sua natureza');
     ok(typeof manifest?.vereditos[0]?.duracao_ms === 'number', 'D5: manifest guarda duração por tentativa');
+    ok(manifest?.vereditos.every((veredito) => veredito.conteudo?.aprovado && veredito.visual?.aprovado != null), 'manifest separa vereditos de conteúdo e visual');
 
     const bytes = await client.artifact(first.id, 1);
     ok(Buffer.from(bytes).subarray(0, 8).equals(PNG.subarray(0, 8)), 'SDK baixa PNG pela rota de artefato');

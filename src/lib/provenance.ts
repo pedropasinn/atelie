@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { overlayLabels, type OverlayLabel, type StructuredBrief } from './brief';
+import type { ResultadoConteudo } from './juizConteudo';
 import type { Verdict } from '../types';
 import { ATELIE_VERSION } from '../version';
 import type { VerificacaoProporcao } from './proporcao';
@@ -25,6 +26,25 @@ export interface ProvenanceVerdict {
   duracao_ms: number;
   geracao_ms: number;
   julgamento_ms: number;
+  conteudo?: {
+    aprovado: boolean;
+    transcricao: string[];
+    faltantes: string[];
+    extras: string[];
+    numeracao: string[];
+    ordem_incorreta: string[][];
+    problemas: string[];
+    juiz: { provider: string; model: string };
+  };
+  visual?: {
+    aprovado: boolean;
+    nota: number | null;
+    alinhamento: string;
+    problemas: string[];
+    sugestao_melhoria: string;
+    prompt_sugerido: string;
+    juiz: { provider: string; model: string };
+  } | null;
 }
 
 export interface ArtifactManifest {
@@ -43,6 +63,8 @@ export interface ArtifactManifest {
     modo: 'explicacao' | 'cena';
     provedor_solicitado: 'codex';
     texto_fora_da_imagem: boolean;
+    texto_extra_permitido: boolean;
+    largura_final_px?: number;
     tamanho: string;
     proporcao_estrita: boolean;
     qualidade: 'low' | 'medium' | 'high';
@@ -107,9 +129,16 @@ export function provenanceVerdict(
   judge?: { provider: string; model: string },
   at = new Date().toISOString(),
   durations: { totalMs: number; generationMs: number; judgmentMs: number } = { totalMs: 0, generationMs: 0, judgmentMs: 0 },
+  checks?: {
+    conteudo: ResultadoConteudo;
+    transcricao: string[];
+    problemasConteudo: string[];
+    juizConteudo: { provider: string; model: string };
+    visual: { verdict: Verdict; judge: { provider: string; model: string } } | null;
+  },
 ): ProvenanceVerdict {
   if (!verdict.proporcao) throw new Error('veredito sem verificação de proporção');
-  return {
+  const receipt: ProvenanceVerdict = {
     tentativa,
     em: at,
     prompt,
@@ -126,6 +155,28 @@ export function provenanceVerdict(
     geracao_ms: Math.max(0, Math.round(durations.generationMs)),
     julgamento_ms: Math.max(0, Math.round(durations.judgmentMs)),
   };
+  if (checks) {
+    receipt.conteudo = {
+      aprovado: checks.conteudo.ok,
+      transcricao: checks.transcricao,
+      faltantes: checks.conteudo.faltantes,
+      extras: checks.conteudo.extras,
+      numeracao: checks.conteudo.numeracao,
+      ordem_incorreta: checks.conteudo.ordemIncorreta,
+      problemas: checks.problemasConteudo,
+      juiz: checks.juizConteudo,
+    };
+    receipt.visual = checks.visual ? {
+      aprovado: checks.visual.verdict.aprovado,
+      nota: checks.visual.verdict.nota,
+      alinhamento: checks.visual.verdict.alinhamento,
+      problemas: checks.visual.verdict.problemas,
+      sugestao_melhoria: checks.visual.verdict.sugestao_melhoria,
+      prompt_sugerido: checks.visual.verdict.prompt_sugerido,
+      juiz: checks.visual.judge,
+    } : null;
+  }
+  return receipt;
 }
 
 export function createArtifactManifest(input: {
@@ -162,6 +213,8 @@ export function createArtifactManifest(input: {
       modo: input.brief.modo ?? 'explicacao',
       provedor_solicitado: input.brief.provedor ?? 'codex',
       texto_fora_da_imagem: input.brief.texto_fora_da_imagem === true,
+      texto_extra_permitido: input.brief.texto_extra_permitido === true,
+      largura_final_px: input.brief.largura_final_px,
       tamanho: input.brief.tamanho,
       proporcao_estrita: input.brief.proporcao_estrita === true,
       qualidade: input.brief.qualidade,
