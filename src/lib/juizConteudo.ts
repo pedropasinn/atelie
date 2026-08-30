@@ -18,6 +18,7 @@ export interface ResultadoConteudo {
   faltantes: string[];
   extras: string[];
   numeracao: string[];
+  repeticoes: Record<string, number>;
   ortografia: DivergenciaOrtografica[];
   ordemIncorreta: string[][];
   ok: boolean;
@@ -134,28 +135,23 @@ function tokenizar(original: string, entrada: number): TokenConteudo[] {
   }));
 }
 
-function localizarPermitida(tokens: TokenConteudo[], permitida: string): Ocorrencia | undefined {
+function localizarPermitidas(tokens: TokenConteudo[], permitida: string): Ocorrencia[] {
   const quantidade = tokenizar(permitida, -1).length;
-  if (!quantidade) return undefined;
-  let melhor: Ocorrencia | undefined;
-  let menorDistancia = Number.POSITIVE_INFINITY;
+  if (!quantidade) return [];
+  const ocorrencias: Ocorrencia[] = [];
   for (let inicio = 0; inicio + quantidade <= tokens.length; inicio++) {
     const trechoTokens = tokens.slice(inicio, inicio + quantidade);
     const trecho = trechoTokens.map((token) => token.normalizado).join(' ');
     if (correspondem(trecho, permitida)) {
-      const distancia = distanciaEdicao(trecho, permitida);
-      if (distancia >= menorDistancia) continue;
-      menorDistancia = distancia;
-      melhor = {
+      ocorrencias.push({
         inicio: trechoTokens[0].entrada,
         fim: trechoTokens[trechoTokens.length - 1].entrada,
         offset: trechoTokens[0].indiceNaEntrada,
         tokens: trechoTokens,
-      };
-      if (distancia === 0) break;
+      });
     }
   }
-  return melhor;
+  return ocorrencias;
 }
 
 function formaOrtografica(texto: string): string {
@@ -186,16 +182,17 @@ export function compararConteudo(
     normalizada: tokenizar(original, -1).map((token) => token.normalizado).join(' '),
     ortografica: tokenizar(original, -1).map((token) => token.original).join(' '),
   }));
-  const ocorrencias = new Map<string, Ocorrencia>();
+  const ocorrencias = new Map<string, Ocorrencia[]>();
 
   for (const permitida of allowlist) {
-    const ocorrencia = localizarPermitida(tokens, permitida.normalizada);
-    if (ocorrencia) ocorrencias.set(permitida.normalizada, ocorrencia);
+    ocorrencias.set(permitida.normalizada, localizarPermitidas(tokens, permitida.normalizada));
   }
 
   const tokensCobertos = new Set<TokenConteudo>();
-  for (const ocorrencia of ocorrencias.values()) {
-    for (const token of ocorrencia.tokens) tokensCobertos.add(token);
+  for (const lista of ocorrencias.values()) {
+    for (const ocorrencia of lista) {
+      for (const token of ocorrencia.tokens) tokensCobertos.add(token);
+    }
   }
 
   const extras: string[] = [];
@@ -225,20 +222,24 @@ export function compararConteudo(
   }
 
   const faltantes = allowlist
-    .filter((permitida) => !ocorrencias.has(permitida.normalizada))
+    .filter((permitida) => !ocorrencias.get(permitida.normalizada)?.length)
     .map((permitida) => permitida.original);
+  const repeticoes = Object.fromEntries(allowlist.flatMap((permitida) => {
+    const quantidade = ocorrencias.get(permitida.normalizada)?.length ?? 0;
+    return quantidade > 1 ? [[permitida.original, quantidade] as const] : [];
+  }));
   const ortografia = allowlist.flatMap((permitida): DivergenciaOrtografica[] => {
-    const ocorrencia = ocorrencias.get(permitida.normalizada);
-    if (!ocorrencia) return [];
-    const transcrito = ocorrencia.tokens.map((token) => token.original).join(' ');
-    return formaOrtografica(transcrito) === formaOrtografica(permitida.ortografica)
-      ? []
-      : [{ esperado: permitida.original, transcrito }];
+    return (ocorrencias.get(permitida.normalizada) ?? []).flatMap((ocorrencia) => {
+      const transcrito = ocorrencia.tokens.map((token) => token.original).join(' ');
+      return formaOrtografica(transcrito) === formaOrtografica(permitida.ortografica)
+        ? []
+        : [{ esperado: permitida.original, transcrito }];
+    });
   });
 
   const ordemIncorreta = (opts.ordensObrigatorias ?? []).filter((ordem) => {
     const posicoes = ordem
-      .map((item) => ocorrencias.get(tokenizar(item, -1).map((token) => token.normalizado).join(' ')))
+      .map((item) => ocorrencias.get(tokenizar(item, -1).map((token) => token.normalizado).join(' '))?.[0])
       .filter((posicao): posicao is Ocorrencia => posicao != null);
     return posicoes.length === ordem.length && posicoes.some((posicao, index) => index > 0 && (
       posicao.inicio < posicoes[index - 1].inicio
@@ -259,6 +260,7 @@ export function compararConteudo(
     faltantes: unicos(faltantes),
     extras: unicos(extras),
     numeracao: unicos(numeracao),
+    repeticoes,
     ortografia,
     ordemIncorreta,
     ok,

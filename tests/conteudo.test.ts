@@ -34,6 +34,24 @@ async function main(): Promise<void> {
   const extra = compararConteudo(['TÍTULO', 'slogan inventado'], ['TÍTULO']);
   ok(!extra.ok && extra.extras.includes('slogan inventado'), 'extra veta por padrão');
 
+  const repeticaoLiteral = compararConteudo(
+    ['UM TESTE JUSTO', 'TAREFA CONGELADA', 'MESMA CÉLULA', 'BRAÇO A', 'BRAÇO B', 'VEREDITO', 'modelo', 'cache', '3 repetições', '3 repetições'],
+    ['UM TESTE JUSTO', 'TAREFA CONGELADA', 'MESMA CÉLULA', 'BRAÇO A', 'BRAÇO B', 'VEREDITO', 'modelo', 'cache', '3 repetições'],
+  );
+  ok(repeticaoLiteral.ok && repeticaoLiteral.extras.length === 0 && repeticaoLiteral.repeticoes['3 repetições'] === 2, 'string permitida repetida não vira extra e é auditável');
+
+  const permitidaContida = compararConteudo(
+    ['DO DADO AO PAINEL', 'FONTES', 'QUALIDADE', 'PAINEL', 'ERP', 'CRM', 'validação', 'conselho'],
+    ['DO DADO AO PAINEL', 'FONTES', 'QUALIDADE', 'PAINEL', 'ERP', 'CRM', 'validação', 'conselho'],
+  );
+  ok(permitidaContida.ok && permitidaContida.extras.length === 0 && permitidaContida.repeticoes.PAINEL === 2, 'permitida contida em outra permitida pode reaparecer isolada');
+
+  const estranhoComRepeticao = compararConteudo(
+    ['DO DADO AO PAINEL', 'FONTES', 'QUALIDADE', 'PAINEL', 'ERP', 'CRM', 'validação', 'conselho', 'slogan inventado'],
+    ['DO DADO AO PAINEL', 'FONTES', 'QUALIDADE', 'PAINEL', 'ERP', 'CRM', 'validação', 'conselho'],
+  );
+  ok(!estranhoComRepeticao.ok && estranhoComRepeticao.extras.includes('slogan inventado'), 'texto realmente estranho continua vetado');
+
   const extraPermitido = compararConteudo(['TÍTULO', 'slogan inventado'], ['TÍTULO'], { textoExtraPermitido: true });
   ok(extraPermitido.ok && extraPermitido.extras.includes('slogan inventado'), 'extra permitido passa e continua auditável');
 
@@ -117,7 +135,7 @@ async function main(): Promise<void> {
         return {
           transcricao: transcriptionCalls === 1
             ? [...input.composed.stringsVisiveis.filter((texto) => texto !== 'segundo'), 'slogan inventado']
-            : input.composed.stringsVisiveis,
+            : [...input.composed.stringsVisiveis, 'FLUXO'],
           provider: 'fake',
           model: 'fake-transcriber',
         };
@@ -140,6 +158,7 @@ async function main(): Promise<void> {
   ok(visualCalls === 1 && receipts[0].visual === null && receipts[1].visual?.aprovado === true, 'veto não pode ser compensado por nota visual');
   ok(receipts[0].problemas.includes('texto não autorizado: slogan inventado'), 'veto expõe o texto não autorizado');
   ok(receipts[0].problemas.includes('rótulo ausente: segundo'), 'veto expõe o rótulo ausente');
+  ok(receipts[1].conteudo?.repeticoes.FLUXO === 2, 'recibo registra contagem de repetições permitidas');
   ok(generationPrompts[1]?.includes('PROIBIDO: qualquer texto além de:'), 'próxima tentativa recebe proibição explícita');
   ok(generationPrompts[1]?.includes('OBRIGATÓRIO incluir: "segundo"'), 'próxima tentativa recebe inclusão obrigatória');
   ok(result.artifacts[0].manifest.parametros.largura_final_px === 800, 'recibo grava largura_final_px');

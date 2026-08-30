@@ -45,6 +45,7 @@ export interface ProvenanceVerdict {
     faltantes: string[];
     extras: string[];
     numeracao: string[];
+    repeticoes: Record<string, number>;
     ortografia?: Array<{ esperado: string; transcrito: string }>;
     ordem_incorreta: string[][];
     problemas: string[];
@@ -183,6 +184,7 @@ export function provenanceVerdict(
       faltantes: checks.conteudo.faltantes,
       extras: checks.conteudo.extras,
       numeracao: checks.conteudo.numeracao,
+      repeticoes: checks.conteudo.repeticoes,
       ortografia: checks.conteudo.ortografia,
       ordem_incorreta: checks.conteudo.ordemIncorreta,
       problemas: checks.problemasConteudo,

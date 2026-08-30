@@ -202,7 +202,9 @@ aparecem em `avisos`, enquanto divergências estritas aparecem em `problemas` e
 deixam `aprovado: false`.
 Cada tentativa 0.2.2 também pode trazer `conteudo` e `visual`. Em `conteudo`,
 `transcricao` contém a lista bruta de todo texto visível que o VLM encontrou, além
-de `faltantes`, `extras`, `numeracao`, `ortografia`, `ordem_incorreta` e o juiz usado;
+de `faltantes`, `extras`, `numeracao`, `repeticoes`, `ortografia`, `ordem_incorreta`
+e o juiz usado. `repeticoes` mapeia cada string permitida encontrada mais de uma vez
+para sua quantidade total de ocorrências; repetições permitidas não entram em `extras`;
 `visual` contém o parecer visual ou `null` quando houve veto textual. O objeto
 `parametros` registra `texto_extra_permitido`, `largura_final_px`,
 `proporcao_estrita` e `ortografia_estrita`.
