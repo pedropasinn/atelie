@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.2 — 2026-08-30
+
+- verifica a proporção real do PNG contra o tamanho pedido (`verificarProporcao`); `proporcao_estrita` (padrão em explicações)
+  reprova e itera com `FORMATO OBRIGATÓRIO`; em cenas só avisa; recibo grava `tamanho_solicitado` e `proporcao`;
+- separa o juiz de conteúdo do juiz visual: o VLM apenas transcreve o texto visível e `compararConteudo` decide em código
+  (rótulo ausente, texto extra não autorizado, ordem obrigatória, texto em cena) com veto que a nota visual não compensa;
+- `texto_extra_permitido`, `largura_final_px` (legibilidade no tamanho de inserção) e `ordem_obrigatoria` no brief;
+- recibo de proveniência ganha `conteudo` e `visual` por tentativa (campos aditivos);
+- motivação: benchmark externo de 30/08 (fig1/fig3 saíram 1024×1536 com `--size landscape`; texto inventado em 3 de 6 figuras).
+
 ## 0.2.1 — 2026-08-29
 
 - corrige idempotência de jobs falhos com retry transitório configurável, `retry`,

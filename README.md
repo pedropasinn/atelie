@@ -48,7 +48,7 @@ npm start                 # abre a TUI (precisa de um terminal real — usa raw 
 
 ## Integração
 
-O Ateliê 0.2.1 também é um motor sem UI, consumível por HTTP ou in-process:
+O Ateliê 0.2.2 também é um motor sem UI, consumível por HTTP ou in-process:
 
 ```bash
 atelie --serve --port 4177
