@@ -67,8 +67,10 @@ export interface Verdict {
   nota: number | null;
   alinhamento: string;
   problemas: string[];
+  avisos?: string[];
   sugestao_melhoria: string;
   prompt_sugerido: string;
+  proporcao?: import('./lib/proporcao').VerificacaoProporcao;
   raw?: string;
 }
 

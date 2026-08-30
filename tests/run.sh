@@ -26,6 +26,9 @@ fi
 echo "── testes de fumaça (funções puras + fixtures de sessão)"
 if node --import tsx tests/smoke.test.ts; then :; else FAIL=1; fi
 
+echo "── proporção solicitada + gate do motor fake"
+if node --import tsx tests/proporcao.test.ts; then :; else FAIL=1; fi
+
 echo "── parser do login por código de dispositivo (wizard de 1ª execução)"
 if node --import tsx tests/codexlogin.test.ts; then :; else FAIL=1; fi
 

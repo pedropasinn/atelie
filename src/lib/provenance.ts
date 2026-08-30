@@ -5,6 +5,7 @@ import path from 'node:path';
 import { overlayLabels, type OverlayLabel, type StructuredBrief } from './brief';
 import type { Verdict } from '../types';
 import { ATELIE_VERSION } from '../version';
+import type { VerificacaoProporcao } from './proporcao';
 
 export const MANIFEST_SCHEMA = 'atelie.provenance/v1' as const;
 
@@ -16,8 +17,10 @@ export interface ProvenanceVerdict {
   nota: number | null;
   alinhamento: string;
   problemas: string[];
+  avisos?: string[];
   sugestao_melhoria: string;
   prompt_sugerido: string;
+  proporcao: VerificacaoProporcao;
   juiz?: { provider: string; model: string };
   duracao_ms: number;
   geracao_ms: number;
@@ -34,11 +37,14 @@ export interface ArtifactManifest {
   prompt_final: string;
   estilo: { id: string; nome: string };
   provedor: { id: string; modelo: string };
+  tamanho_solicitado: string;
+  proporcao: VerificacaoProporcao;
   parametros: {
     modo: 'explicacao' | 'cena';
     provedor_solicitado: 'codex';
     texto_fora_da_imagem: boolean;
     tamanho: string;
+    proporcao_estrita: boolean;
     qualidade: 'low' | 'medium' | 'high';
     idioma: 'pt-BR';
     referencias: Array<{ nome: string; sha256?: string }>;
@@ -102,6 +108,7 @@ export function provenanceVerdict(
   at = new Date().toISOString(),
   durations: { totalMs: number; generationMs: number; judgmentMs: number } = { totalMs: 0, generationMs: 0, judgmentMs: 0 },
 ): ProvenanceVerdict {
+  if (!verdict.proporcao) throw new Error('veredito sem verificação de proporção');
   return {
     tentativa,
     em: at,
@@ -110,8 +117,10 @@ export function provenanceVerdict(
     nota: verdict.nota,
     alinhamento: verdict.alinhamento,
     problemas: verdict.problemas,
+    avisos: verdict.avisos,
     sugestao_melhoria: verdict.sugestao_melhoria,
     prompt_sugerido: verdict.prompt_sugerido,
+    proporcao: verdict.proporcao,
     juiz: judge,
     duracao_ms: Math.max(0, Math.round(durations.totalMs)),
     geracao_ms: Math.max(0, Math.round(durations.generationMs)),
@@ -147,11 +156,14 @@ export function createArtifactManifest(input: {
     prompt_final: input.finalPrompt,
     estilo: input.style,
     provedor: { id: input.provider.id, modelo: input.provider.model },
+    tamanho_solicitado: input.brief.tamanho,
+    proporcao: input.verdicts[input.verdicts.length - 1].proporcao,
     parametros: {
       modo: input.brief.modo ?? 'explicacao',
       provedor_solicitado: input.brief.provedor ?? 'codex',
       texto_fora_da_imagem: input.brief.texto_fora_da_imagem === true,
       tamanho: input.brief.tamanho,
+      proporcao_estrita: input.brief.proporcao_estrita === true,
       qualidade: input.brief.qualidade,
       idioma: input.brief.idioma,
       referencias: referenceReceipts(input.brief.refs),

@@ -25,6 +25,8 @@ export interface StructuredBrief {
   legendas_curtas: boolean;
   idioma: 'pt-BR';
   tamanho: string;
+  /** Reprova e repete tentativas cuja proporção real diverge da solicitada. */
+  proporcao_estrita?: boolean;
   qualidade: BriefQuality;
   negativos: string[];
   refs: string[];
@@ -110,6 +112,7 @@ export function normalizeBrief(value: unknown): StructuredBrief {
     legendas_curtas: raw.legendas_curtas !== false,
     idioma: 'pt-BR',
     tamanho: typeof raw.tamanho === 'string' && raw.tamanho.trim() ? raw.tamanho.trim() : '2K',
+    proporcao_estrita: typeof raw.proporcao_estrita === 'boolean' ? raw.proporcao_estrita : modo === 'explicacao',
     qualidade,
     negativos: stringArray(raw.negativos),
     refs: stringArray(raw.refs),

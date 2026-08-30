@@ -13,6 +13,7 @@ import { cliEnabled, loadSettings } from './settings';
 import { findStyle } from './userStyles';
 import { createArtifactManifest, pngDimensions, provenanceVerdict, writeManifest, type ArtifactManifest } from './provenance';
 import { estimateImageCost } from './cost';
+import { verificarProporcao, type VerificacaoProporcao } from './proporcao';
 
 export interface MotorGenerationInput {
   prompt: string;
@@ -105,6 +106,29 @@ function assertNotAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw abortError();
 }
 
+function proporcaoDivergente(tamanho: string, dimensoes: { largura: number; altura: number }, verificacao: VerificacaoProporcao): string {
+  return `proporção divergente: pedido ${tamanho}, real ${dimensoes.largura}x${dimensoes.altura} (${verificacao.orientacao_real})`;
+}
+
+function mdc(a: number, b: number): number {
+  while (b) [a, b] = [b, a % b];
+  return a;
+}
+
+function instrucaoProporcao(tamanho: string, verificacao: VerificacaoProporcao): string {
+  const forma = verificacao.orientacao_pedida === 'landscape'
+    ? 'horizontal'
+    : verificacao.orientacao_pedida === 'portrait'
+      ? 'vertical'
+      : 'quadrado';
+  const match = /^(\d+)x(\d+)$/i.exec(tamanho.trim());
+  if (!match) return `FORMATO OBRIGATÓRIO: ${forma}; respeite essa orientação na imagem final.`;
+  const largura = Number(match[1]);
+  const altura = Number(match[2]);
+  const divisor = mdc(largura, altura);
+  return `FORMATO OBRIGATÓRIO: ${forma} ${largura / divisor}:${altura / divisor}; respeite a proporção ${largura}x${altura} na imagem final.`;
+}
+
 async function defaultGenerate(input: MotorGenerationInput): Promise<MotorGenerationOutput> {
   const mode = input.mode;
   const job: GenJob = {
@@ -164,11 +188,13 @@ function finalVerdict(artifacts: GeneratedArtifact[]): Verdict {
   const notes = artifacts.map((a) => a.verdict.nota).filter((n): n is number => n != null);
   const approved = artifacts.every((a) => a.verdict.aprovado);
   const worst = [...artifacts].sort((a, b) => (a.verdict.nota ?? -1) - (b.verdict.nota ?? -1))[0];
+  const avisos = [...new Set(artifacts.flatMap((a) => a.verdict.avisos ?? []))].slice(0, 12);
   return {
     aprovado: approved,
     nota: notes.length ? Math.round(notes.reduce((sum, n) => sum + n, 0) / notes.length * 10) / 10 : null,
     alinhamento: approved ? 'todos os artefatos foram aprovados' : worst.verdict.alinhamento,
     problemas: [...new Set(artifacts.flatMap((a) => a.verdict.problemas))].slice(0, 12),
+    avisos: avisos.length ? avisos : undefined,
     sugestao_melhoria: worst.verdict.sugestao_melhoria,
     prompt_sugerido: worst.verdict.prompt_sugerido,
   };
@@ -241,10 +267,27 @@ export class AtelieMotor {
         artifactCostUsd += generatedCost;
         artifactCostType = generated.costType ?? (generated.costUsd == null ? 'estimativa' : 'informado');
         artifactCostSources.add(generated.costSource ?? (generated.costUsd == null ? 'tabela-padrao-atelie-2026-08-29' : 'provedor-injetado'));
+        const dimensoes = pngDimensions(generated.pngPath);
+        const proporcao = verificarProporcao(brief.tamanho, dimensoes);
         assertNotAborted(options.signal);
         options.onProgress?.({ etapa: 'julgando', estilo: styleId, artefato: artifactN, tentativa: attempt, concluidos: styleIndex, total: styleIds.length, mensagem: `avaliando legibilidade de ${styleId}` });
         const judgmentStarted = Date.now();
         judged = await this.deps.judge({ pngPath: generated.pngPath, composed: { ...composed, prompt }, signal: options.signal });
+        const avisoProporcao = proporcao.ok ? undefined : proporcaoDivergente(brief.tamanho, dimensoes, proporcao);
+        judged = {
+          ...judged,
+          verdict: {
+            ...judged.verdict,
+            aprovado: brief.proporcao_estrita && !proporcao.ok ? false : judged.verdict.aprovado,
+            problemas: brief.proporcao_estrita && avisoProporcao
+              ? [...new Set([...judged.verdict.problemas, avisoProporcao])]
+              : judged.verdict.problemas,
+            avisos: !brief.proporcao_estrita && avisoProporcao
+              ? [...new Set([...(judged.verdict.avisos ?? []), avisoProporcao])]
+              : judged.verdict.avisos,
+            proporcao,
+          },
+        };
         const judgmentMs = Date.now() - judgmentStarted;
         verdicts.push(provenanceVerdict(
           attempt,
@@ -261,6 +304,7 @@ export class AtelieMotor {
           brief.modo === 'cena' || brief.texto_fora_da_imagem
             ? 'Mantenha a imagem sem qualquer texto.'
             : `Mantenha exatamente estas strings e nenhuma outra: ${composed.stringsVisiveis.map((s) => `"${s}"`).join(', ')}. Sem microtexto.`,
+          brief.proporcao_estrita && !proporcao.ok ? instrucaoProporcao(brief.tamanho, proporcao) : '',
         ].filter(Boolean).join(' ');
       }
 

@@ -49,6 +49,7 @@ passam por redação de padrões de credencial.
   "legendas_curtas": true,
   "idioma": "pt-BR",
   "tamanho": "2K",
+  "proporcao_estrita": true,
   "qualidade": "medium",
   "negativos": ["marca-d’água"],
   "refs": [],
@@ -66,6 +67,11 @@ passam por redação de padrões de credencial.
 - `texto_fora_da_imagem: true` só atua em `explicacao`: pede uma camada visual sem
   texto, aplica o gate de zero texto e devolve `rotulos_overlay` no manifest.
 - `iteracoes` é o número de novas tentativas depois da primeira geração.
+- `proporcao_estrita` controla o gate das dimensões reais: o default é `true` em
+  `explicacao` e `false` em `cena`. Aliases comparam orientação; `WxH` compara a
+  razão largura/altura com tolerância relativa de 5%; `2K` e valores sem proporção
+  explícita não impõem geometria. Uma divergência estrita reprova a tentativa e
+  acrescenta uma instrução obrigatória de formato à próxima geração.
 - `qualidade` assume `medium`, que é a política econômica das integrações.
 - Em `explicacao`, entram no máximo 12 strings visíveis, cada uma com até 42
   caracteres. Conteúdo excedente vira conceito visual, não microtexto.
@@ -118,6 +124,10 @@ Cada pasta `artifact-NNN/` contém `artifact.png`, tentativas e `manifest.json` 
 schema `atelie.provenance/v1`: versão do Ateliê, prompt final, estilo,
 provedor/modelo reais, parâmetros, rótulos de overlay, histórico de vereditos com
 duração de geração/julgamento, SHA-256, bytes e dimensões lidas do IHDR do PNG.
+O recibo também traz `tamanho_solicitado` e `proporcao` na raiz. Cada item de
+`vereditos` repete o resultado `proporcao` da tentativa; divergências flexíveis
+aparecem em `avisos`, enquanto divergências estritas aparecem em `problemas` e
+deixam `aprovado: false`.
 `metricas.custo_usd` é sempre preenchido junto de `custo_tipo` e `custo_fonte`.
 No caminho Codex ele é uma **estimativa**, não faturamento observado. A tabela pode
 ser substituída por `ATELIE_IMAGE_PRICE_TABLE_JSON`, por exemplo:

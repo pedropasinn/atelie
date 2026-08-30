@@ -167,6 +167,6 @@ próprio binário do Electron (`process.execPath`) e o motor spawna o wrapper co
 ## Notas técnicas (contrato verificado)
 Ver `BUILD_CONTRACT.md`. Pontos que importam:
 - `--provider codex` é flag **global** (antes do subcomando `images generate`).
-- Sob Codex, `--size` é uma **dica** (não honrado exato) e `--n` não existe → N versões = N chamadas.
+- Sob Codex, `--size` continua sendo uma **dica do provedor** (pode não ser honrada exatamente) e `--n` não existe → N versões = N chamadas. No motor de brief, as dimensões reais são verificadas após cada geração: com `proporcao_estrita: true`, divergências reprovam e acionam nova tentativa; com `false`, ficam registradas como aviso no veredito e na proveniência. O default é estrito em `explicacao` e flexível em `cena`.
 - Transparência (sticker/logo) usa o subcomando `transparent generate`.
 - O juiz costuma duplicar o texto de saída; o parser (`lib/jsonx.ts`) extrai o primeiro `{...}` balanceado.

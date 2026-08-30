@@ -50,8 +50,12 @@ de `atelie/sdk`; nenhuma mudança no Macrostudio é necessária nesta entrega.
 O wrapper instalado [`gpt-image-2-skill` 0.7.3](https://github.com/Wangnov/gpt-image-2-skill/tree/v0.7.3) aceita `WIDTHxHEIGHT` customizado com
 lados múltiplos de 16, razão máxima 3:1 e até 8.294.400 pixels; portanto os tamanhos
 acima são pedidos válidos e não convertem 9:16 em 3:4. O backend Codex ainda trata o
-tamanho como dica: o adapter deve conferir `manifest.arquivo.dimensoes` e só então
-enquadrar no pipeline da peça quando a dimensão final divergir.
+tamanho como dica, mas o motor compara a razão pedida com as dimensões reais. Como
+o brief do adapter usa `modo: "cena"`, o default flexível mantém o artefato e registra
+a divergência em `manifest.proporcao` e `manifest.vereditos[].avisos`; o adapter deve
+conferir esse resultado antes de enquadrar a imagem no pipeline da peça. Quando a
+proporção for impeditiva, envie `proporcao_estrita: true`: a tentativa divergente é
+reprovada e o motor itera com uma instrução explícita de formato.
 
 ## Gate
 

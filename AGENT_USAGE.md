@@ -25,7 +25,7 @@ atelie --run --prompt "<pedido>" --styles fotorrealista,watercolor --versions 2 
 #   --gen-provider codex             (único provedor; outro id falha explicitamente)
 #   --judge-mode painel|unico        (painel=Claude+Codex; unico=1 juiz)
 #   --judge-models "claude:sonnet,codex:gpt-5.4"
-#   --size 2K|WxH|square|portrait|landscape|wide   (dica no codex)
+#   --size 2K|WxH|square|portrait|landscape|wide   (dica do provedor; veja nota abaixo)
 #   --quality low|medium|high
 #   --refs a.png,b.png               (consistência/style-transfer via codex edit)
 #   --avoid "texto, marca dagua"     (negativos)
@@ -53,6 +53,12 @@ atelie --judge-file <png> --request "..." [--style <id>] [--model sonnet]
 O SDK TypeScript está em `atelie/sdk`; o contrato HTTP e o schema do brief estão em
 `docs/API-V1.md`. Testes e integrações devem injetar provedor fake no `criarMotor`,
 sem gerar imagens reais.
+
+O Codex pode devolver proporção diferente da pedida em `--size`. No motor de brief,
+aliases (`square`, `portrait`, `landscape`/`wide`) são conferidos por orientação e
+`WxH` por razão, com tolerância relativa de 5%. `proporcao_estrita` reprova e itera
+quando houver divergência; sem o gate estrito, o veredito e o recibo registram um
+aviso. O default é `true` em `modo: "explicacao"` e `false` em `modo: "cena"`.
 
 ## Forma do JSON de `--run`
 `{sessionId, dir, request, versionsPerStyle, iterations:[{iteration, durationMs, results:[{styleId,index,pngPath,ok,verdict:{nota,aprovado,alinhamento,problemas[],sugestao_melhoria,prompt_sugerido,painel?:[{provider,model,nota,aprovado}]}}], best}], best:{styleId,pngPath,nota}, durationMs}`.
