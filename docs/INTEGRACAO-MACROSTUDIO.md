@@ -53,7 +53,9 @@ acima são pedidos válidos e não convertem 9:16 em 3:4. O backend Codex ainda 
 tamanho como dica, mas o motor compara a razão pedida com as dimensões reais. Como
 o brief do adapter usa `modo: "cena"`, o default flexível mantém o artefato e registra
 a divergência em `manifest.proporcao` e `manifest.vereditos[].avisos`; o adapter deve
-conferir esse resultado antes de enquadrar a imagem no pipeline da peça. Quando a
+conferir esse resultado antes de enquadrar a imagem no pipeline da peça. Em recibos
+0.2.1, `proporcao` e `tamanho_solicitado` não existem: trate a ausência como “não
+verificado”, sem acessar `manifest.proporcao.ok` antes de testar o campo. Quando a
 proporção for impeditiva, envie `proporcao_estrita: true`: a tentativa divergente é
 reprovada e o motor itera com uma instrução explícita de formato.
 

@@ -45,11 +45,14 @@ passam por redação de padrões de credencial.
   "provedor": "codex",
   "estilo": "infografico-bento",
   "texto_fora_da_imagem": true,
-  "secoes": [{ "rotulo": "PEDIDO", "itens": ["limites", "testes", "risco"] }],
+  "texto_extra_permitido": false,
+  "largura_final_px": 800,
+  "secoes": [{ "rotulo": "PEDIDO", "itens": ["limites", "testes", "risco"], "ordem_obrigatoria": true }],
   "legendas_curtas": true,
   "idioma": "pt-BR",
   "tamanho": "2K",
   "proporcao_estrita": true,
+  "ortografia_estrita": true,
   "qualidade": "medium",
   "negativos": ["marca-d’água"],
   "refs": [],
@@ -66,12 +69,19 @@ passam por redação de padrões de credencial.
   do `brief_hash`.
 - `texto_fora_da_imagem: true` só atua em `explicacao`: pede uma camada visual sem
   texto, aplica o gate de zero texto e devolve `rotulos_overlay` no manifest.
+- `texto_extra_permitido` desliga somente o veto a strings fora da allowlist; o
+  default é `false`. Rótulos obrigatórios continuam sendo verificados.
+- `largura_final_px` informa a largura real de exibição ao gate de legibilidade.
+- `secoes[].ordem_obrigatoria: true` exige que os itens visíveis da seção apareçam
+  na ordem declarada.
 - `iteracoes` é o número de novas tentativas depois da primeira geração.
 - `proporcao_estrita` controla o gate das dimensões reais: o default é `true` em
   `explicacao` e `false` em `cena`. Aliases comparam orientação; `WxH` compara a
   razão largura/altura com tolerância relativa de 5%; `2K` e valores sem proporção
   explícita não impõem geometria. Uma divergência estrita reprova a tentativa e
   acrescenta uma instrução obrigatória de formato à próxima geração.
+- `ortografia_estrita` reprova diferenças de letras ou acentos encontradas pelo
+  juiz de conteúdo; o default é `true` em `explicacao` e `false` em `cena`.
 - `qualidade` assume `medium`, que é a política econômica das integrações.
 - Em `explicacao`, entram no máximo 12 strings visíveis, cada uma com até 42
   caracteres. Conteúdo excedente vira conceito visual, não microtexto.
@@ -124,10 +134,22 @@ Cada pasta `artifact-NNN/` contém `artifact.png`, tentativas e `manifest.json` 
 schema `atelie.provenance/v1`: versão do Ateliê, prompt final, estilo,
 provedor/modelo reais, parâmetros, rótulos de overlay, histórico de vereditos com
 duração de geração/julgamento, SHA-256, bytes e dimensões lidas do IHDR do PNG.
-O recibo também traz `tamanho_solicitado` e `proporcao` na raiz. Cada item de
-`vereditos` repete o resultado `proporcao` da tentativa; divergências flexíveis
+Recibos gravados desde 0.2.2 trazem `tamanho_solicitado` e `proporcao` na raiz;
+esses campos são opcionais na leitura porque recibos 0.2.1 em disco não os têm.
+Cada item de `vereditos` repete o resultado `proporcao` da tentativa; divergências flexíveis
 aparecem em `avisos`, enquanto divergências estritas aparecem em `problemas` e
 deixam `aprovado: false`.
+Cada tentativa 0.2.2 também pode trazer `conteudo` e `visual`. Em `conteudo`,
+`transcricao` contém a lista bruta de todo texto visível que o VLM encontrou, além
+de `faltantes`, `extras`, `numeracao`, `ortografia`, `ordem_incorreta` e o juiz usado;
+`visual` contém o parecer visual ou `null` quando houve veto textual. O objeto
+`parametros` registra `texto_extra_permitido`, `largura_final_px`,
+`proporcao_estrita` e `ortografia_estrita`.
+
+Por consequência, `GET /v1/jobs/{id}` ecoa em
+`resultado.artefatos[].manifest.vereditos[].conteudo.transcricao` todo texto visível
+da imagem. Trate a resposta como potencialmente sensível e aplique o mesmo controle
+de acesso usado para o PNG.
 `metricas.custo_usd` é sempre preenchido junto de `custo_tipo` e `custo_fonte`.
 No caminho Codex ele é uma **estimativa**, não faturamento observado. A tabela pode
 ser substituída por `ATELIE_IMAGE_PRICE_TABLE_JSON`, por exemplo:

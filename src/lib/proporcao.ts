@@ -13,6 +13,17 @@ function orientacao(largura: number, altura: number): OrientacaoImagem {
   return largura === altura ? 'square' : largura > altura ? 'landscape' : 'portrait';
 }
 
+/** Normaliza aliases e dimensões para a orientação usada por proporção e custo. */
+export function orientacaoDeTamanho(tamanhoPedido: string): OrientacaoImagem | null {
+  const tamanho = tamanhoPedido.trim().toLowerCase();
+  if (tamanho === 'landscape' || tamanho === 'wide') return 'landscape';
+  if (tamanho === 'portrait') return 'portrait';
+  if (tamanho === 'square') return 'square';
+  const match = /^(\d+)x(\d+)$/.exec(tamanho);
+  if (!match || !Number(match[1]) || !Number(match[2])) return null;
+  return orientacao(Number(match[1]), Number(match[2]));
+}
+
 /**
  * Confere a orientação dos aliases e a razão largura/altura de tamanhos WxH.
  * Tamanhos sem proporção explícita (como 2K) são aceitos sem impor geometria.
@@ -25,13 +36,7 @@ export function verificarProporcao(
   const tamanho = tamanhoPedido.trim().toLowerCase();
   const proporcaoReal = dimensoes.largura / dimensoes.altura;
   const orientacaoReal = orientacao(dimensoes.largura, dimensoes.altura);
-  const aliases: Record<string, OrientacaoImagem> = {
-    landscape: 'landscape',
-    wide: 'landscape',
-    portrait: 'portrait',
-    square: 'square',
-  };
-  const orientacaoPedida = aliases[tamanho];
+  const orientacaoPedida = tamanho.includes('x') ? null : orientacaoDeTamanho(tamanho);
 
   if (orientacaoPedida) {
     const ok = orientacaoPedida === orientacaoReal;

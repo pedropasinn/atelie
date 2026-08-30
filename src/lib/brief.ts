@@ -32,6 +32,8 @@ export interface StructuredBrief {
   tamanho: string;
   /** Reprova e repete tentativas cuja proporção real diverge da solicitada. */
   proporcao_estrita?: boolean;
+  /** Reprova divergências de letras ou acentos no modo explicação. */
+  ortografia_estrita?: boolean;
   qualidade: BriefQuality;
   negativos: string[];
   refs: string[];
@@ -129,6 +131,7 @@ export function normalizeBrief(value: unknown): StructuredBrief {
     idioma: 'pt-BR',
     tamanho: typeof raw.tamanho === 'string' && raw.tamanho.trim() ? raw.tamanho.trim() : '2K',
     proporcao_estrita: typeof raw.proporcao_estrita === 'boolean' ? raw.proporcao_estrita : modo === 'explicacao',
+    ortografia_estrita: typeof raw.ortografia_estrita === 'boolean' ? raw.ortografia_estrita : modo === 'explicacao',
     qualidade,
     negativos: stringArray(raw.negativos),
     refs: stringArray(raw.refs),
@@ -257,6 +260,9 @@ export function buildLegibilityRubric(composed: ComposedBrief, threshold = 7, la
   return [
     'Você é o juiz visual do Ateliê. O conteúdo textual já foi verificado separadamente; não transcreva nem compare a allowlist.',
     'Avalie legibilidade, hierarquia, composição, contraste, fidelidade visual e clareza semântica.',
+    composed.brief.modo === 'cena' || composed.brief.texto_fora_da_imagem
+      ? 'Esta imagem deve ter zero texto: reprove se houver qualquer letra, número, legenda, logotipo, marca-d’água ou pseudotexto.'
+      : 'Reprove texto ilegível, cortado, sobreposto, microtexto, pseudotexto ou com ortografia/acentuação visivelmente errada.',
     'Reprove estruturas semanticamente vazias, repetitivas ou que não diferenciem os conceitos pedidos.',
     legibilidadeFinal,
     `Avalie também se a imagem cumpre o objetivo: ${quote(composed.brief.objetivo)}.`,

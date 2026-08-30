@@ -21,7 +21,8 @@ export interface ProvenanceVerdict {
   avisos?: string[];
   sugestao_melhoria: string;
   prompt_sugerido: string;
-  proporcao: VerificacaoProporcao;
+  /** Presente nos recibos gravados a partir do Ateliê 0.2.2. */
+  proporcao?: VerificacaoProporcao;
   juiz?: { provider: string; model: string };
   duracao_ms: number;
   geracao_ms: number;
@@ -32,6 +33,7 @@ export interface ProvenanceVerdict {
     faltantes: string[];
     extras: string[];
     numeracao: string[];
+    ortografia?: Array<{ esperado: string; transcrito: string }>;
     ordem_incorreta: string[][];
     problemas: string[];
     juiz: { provider: string; model: string };
@@ -57,8 +59,9 @@ export interface ArtifactManifest {
   prompt_final: string;
   estilo: { id: string; nome: string };
   provedor: { id: string; modelo: string };
-  tamanho_solicitado: string;
-  proporcao: VerificacaoProporcao;
+  /** Campos opcionais para leitura compatível de recibos 0.2.1. */
+  tamanho_solicitado?: string;
+  proporcao?: VerificacaoProporcao;
   parametros: {
     modo: 'explicacao' | 'cena';
     provedor_solicitado: 'codex';
@@ -67,6 +70,7 @@ export interface ArtifactManifest {
     largura_final_px?: number;
     tamanho: string;
     proporcao_estrita: boolean;
+    ortografia_estrita?: boolean;
     qualidade: 'low' | 'medium' | 'high';
     idioma: 'pt-BR';
     referencias: Array<{ nome: string; sha256?: string }>;
@@ -137,7 +141,6 @@ export function provenanceVerdict(
     visual: { verdict: Verdict; judge: { provider: string; model: string } } | null;
   },
 ): ProvenanceVerdict {
-  if (!verdict.proporcao) throw new Error('veredito sem verificação de proporção');
   const receipt: ProvenanceVerdict = {
     tentativa,
     em: at,
@@ -162,6 +165,7 @@ export function provenanceVerdict(
       faltantes: checks.conteudo.faltantes,
       extras: checks.conteudo.extras,
       numeracao: checks.conteudo.numeracao,
+      ortografia: checks.conteudo.ortografia,
       ordem_incorreta: checks.conteudo.ordemIncorreta,
       problemas: checks.problemasConteudo,
       juiz: checks.juizConteudo,
@@ -217,6 +221,7 @@ export function createArtifactManifest(input: {
       largura_final_px: input.brief.largura_final_px,
       tamanho: input.brief.tamanho,
       proporcao_estrita: input.brief.proporcao_estrita === true,
+      ortografia_estrita: input.brief.ortografia_estrita === true,
       qualidade: input.brief.qualidade,
       idioma: input.brief.idioma,
       referencias: referenceReceipts(input.brief.refs),

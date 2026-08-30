@@ -231,7 +231,7 @@ async function main(): Promise<void> {
     ok(manifest?.vereditos.length === 2, 'manifest guarda histórico dos vereditos');
     ok(manifest?.arquivo.sha256.length === 64, 'manifest guarda sha256 do PNG');
     ok(manifest?.provedor.id === 'fake' && manifest.provedor.modelo === 'fake-image-1', 'manifest guarda provedor/modelo');
-    ok(manifest?.atelie_versao === '0.2.1', 'D5: manifest guarda versão do Ateliê');
+    ok(manifest?.atelie_versao === '0.2.2', 'D5: manifest guarda versão do Ateliê');
     ok(manifest?.arquivo.dimensoes.largura === 320 && manifest.arquivo.dimensoes.altura === 640, 'D5: manifest lê dimensões reais do IHDR');
     ok(manifest?.metricas.custo_usd === 0 && manifest.metricas.custo_tipo === 'informado', 'D5: manifest sempre preenche custo_usd e sua natureza');
     ok(typeof manifest?.vereditos[0]?.duracao_ms === 'number', 'D5: manifest guarda duração por tentativa');

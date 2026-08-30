@@ -1,5 +1,6 @@
 import { readManifest } from '../state/manifest';
 import { findStyle } from './userStyles';
+import { orientacaoDeTamanho } from './proporcao';
 import type { PanelVerdict, Session, Verdict } from '../types';
 
 /*
@@ -57,14 +58,7 @@ export function loadImagePriceTable(env: NodeJS.ProcessEnv = process.env): { tab
 }
 
 function imageOrientation(size: string): ImageOrientation {
-  const alias = size.trim().toLowerCase();
-  if (alias === 'portrait') return 'portrait';
-  if (alias === 'landscape' || alias === 'wide') return 'landscape';
-  const match = /^(\d+)x(\d+)$/i.exec(size.trim());
-  if (!match) return 'square';
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  return width === height ? 'square' : width < height ? 'portrait' : 'landscape';
+  return orientacaoDeTamanho(size) ?? 'square';
 }
 
 export function estimateImageCost(quality: 'low' | 'medium' | 'high', size: string, env: NodeJS.ProcessEnv = process.env): ImageCostEstimate {

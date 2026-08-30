@@ -202,7 +202,15 @@ async function defaultJudge(input: MotorJudgeInput): Promise<MotorJudgeOutput> {
   const rubric = buildLegibilityRubric(input.composed, threshold, pngDimensions(input.pngPath).largura);
   const raw = await askImagesRaw(spec, [input.pngPath], rubric, input.signal);
   const verdict = coerce(extractJson(raw), raw, threshold);
-  return { verdict, provider: spec.provider, model: spec.model };
+  return { verdict: aplicarGateVisual(verdict), provider: spec.provider, model: spec.model };
+}
+
+/** Falhas declaradas pelo juiz visual nunca podem coexistir com aprovação. */
+export function aplicarGateVisual(verdict: Verdict, zeroTexto = false): Verdict {
+  const falhaVisual = /ileg[ií]vel|ortografi|acentua|microtexto|pseudotexto|cortad|sobrepost/i;
+  const textoEmModoZero = /texto|letra|n[uú]mero|legenda|logotipo|marca-d[’' -]?água|pseudotexto/i;
+  const reprovar = verdict.problemas.some((problema) => falhaVisual.test(problema) || (zeroTexto && textoEmModoZero.test(problema)));
+  return reprovar && verdict.aprovado ? { ...verdict, aprovado: false } : verdict;
 }
 
 function contentProblems(
@@ -219,18 +227,26 @@ function contentProblems(
     }
   }
   for (const faltante of result.faltantes) problemas.push(`rótulo ausente: ${faltante}`);
+  if (composed.brief.ortografia_estrita) {
+    for (const divergencia of result.ortografia) {
+      problemas.push(`ortografia divergente: "${divergencia.transcrito}" ≠ "${divergencia.esperado}"`);
+    }
+  }
   for (const ordem of result.ordemIncorreta) problemas.push(`ordem obrigatória divergente: ${ordem.join(' → ')}`);
   return problemas;
 }
 
 function contentVeto(problemas: string[], composed: ComposedBrief): Verdict {
   const faltantes = problemas.filter((problema) => problema.startsWith('rótulo ausente:'));
+  const ortografia = problemas.some((problema) => problema.startsWith('ortografia divergente:'));
   return {
     aprovado: false,
     nota: null,
     alinhamento: 'conteúdo textual reprovado por regra determinística',
     problemas,
-    sugestao_melhoria: faltantes.length ? 'incluir todos os rótulos obrigatórios sem acrescentar texto' : 'remover todo texto não autorizado',
+    sugestao_melhoria: faltantes.length
+      ? 'incluir todos os rótulos obrigatórios sem acrescentar texto'
+      : ortografia ? 'corrigir exatamente a ortografia dos rótulos permitidos' : 'remover todo texto não autorizado',
     prompt_sugerido: composed.prompt,
   };
 }
@@ -333,6 +349,8 @@ export class AtelieMotor {
         const compared = compararConteudo(contentJudged.transcricao, composed.stringsVisiveis, {
           textoExtraPermitido: brief.texto_extra_permitido,
           zeroTexto,
+          modo: brief.modo,
+          ortografiaEstrita: brief.ortografia_estrita,
           ordensObrigatorias: composed.ordensObrigatorias,
         });
         const contentResult = contentJudged.erro ? { ...compared, ok: false } : compared;
@@ -341,6 +359,7 @@ export class AtelieMotor {
         if (contentResult.ok) {
           options.onProgress?.({ etapa: 'julgando', estilo: styleId, artefato: artifactN, tentativa: attempt, concluidos: styleIndex, total: styleIds.length, mensagem: `avaliando visual de ${styleId}` });
           visualJudged = await this.deps.judge({ pngPath: generated.pngPath, composed: attemptComposed, signal: options.signal });
+          visualJudged = { ...visualJudged, verdict: aplicarGateVisual(visualJudged.verdict, zeroTexto) };
           judged = visualJudged;
         } else {
           judged = {
@@ -351,6 +370,14 @@ export class AtelieMotor {
         }
         // Proporção: veto em modo estrito, aviso em modo flexível; nunca compensa o veto de conteúdo.
         const avisoProporcao = proporcao.ok ? undefined : proporcaoDivergente(brief.tamanho, dimensoes, proporcao);
+        const avisoGateInerte = brief.proporcao_estrita && proporcao.orientacao_pedida == null
+          ? `proporção estrita sem geometria verificável para o tamanho "${brief.tamanho}"`
+          : undefined;
+        const avisosProporcao = [...new Set([
+          ...(judged.verdict.avisos ?? []),
+          ...(!brief.proporcao_estrita && avisoProporcao ? [avisoProporcao] : []),
+          ...(avisoGateInerte ? [avisoGateInerte] : []),
+        ])];
         judged = {
           ...judged,
           verdict: {
@@ -359,9 +386,7 @@ export class AtelieMotor {
             problemas: brief.proporcao_estrita && avisoProporcao
               ? [...new Set([...judged.verdict.problemas, avisoProporcao])]
               : judged.verdict.problemas,
-            avisos: !brief.proporcao_estrita && avisoProporcao
-              ? [...new Set([...(judged.verdict.avisos ?? []), avisoProporcao])]
-              : judged.verdict.avisos,
+            avisos: avisosProporcao.length ? avisosProporcao : undefined,
             proporcao,
           },
         };
@@ -388,7 +413,7 @@ export class AtelieMotor {
         const instrucaoFormato = brief.proporcao_estrita && !proporcao.ok ? instrucaoProporcao(brief.tamanho, proporcao) : '';
         if (!contentResult.ok) {
           prompt = [
-            prompt,
+            composed.prompt,
             zeroTexto
               ? 'PROIBIDO: qualquer texto visível, inclusive números, logotipos, marcas-d’água e pseudotexto.'
               : !brief.texto_extra_permitido
@@ -397,12 +422,15 @@ export class AtelieMotor {
             contentResult.faltantes.length
               ? `OBRIGATÓRIO incluir: ${contentResult.faltantes.map((s) => `"${s}"`).join(', ')}.`
               : '',
+            contentResult.ortografia.length
+              ? `ORTOGRAFIA OBRIGATÓRIA: ${contentResult.ortografia.map((item) => `substitua "${item.transcrito}" por "${item.esperado}"`).join('; ')}.`
+              : '',
             contentResult.ordemIncorreta.map((ordem) => `ORDEM OBRIGATÓRIA: ${ordem.map((s) => `"${s}"`).join(' → ')}.`).join(' '),
             instrucaoFormato,
           ].filter(Boolean).join(' ');
         } else {
           prompt = [
-            judged.verdict.prompt_sugerido.trim() || prompt,
+            judged.verdict.prompt_sugerido.trim() || composed.prompt,
             judged.verdict.sugestao_melhoria.trim() ? `AJUSTE OBRIGATÓRIO: ${judged.verdict.sugestao_melhoria.trim()}.` : '',
             zeroTexto
               ? 'Mantenha a imagem sem qualquer texto.'

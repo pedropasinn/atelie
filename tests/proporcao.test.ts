@@ -27,7 +27,15 @@ function ok(condition: unknown, name: string, detail = ''): void {
 async function main(): Promise<void> {
   const { normalizeBrief } = await import('../src/lib/brief');
   const { criarMotor } = await import('../src/lib/motor');
-  const { verificarProporcao } = await import('../src/lib/proporcao');
+  const { orientacaoDeTamanho, verificarProporcao } = await import('../src/lib/proporcao');
+  const { estimateImageCost } = await import('../src/lib/cost');
+  const { provenanceVerdict } = await import('../src/lib/provenance');
+
+  const reciboLegado = provenanceVerdict(1, 'prompt', {
+    aprovado: true, nota: 9, alinhamento: 'ok', problemas: [], sugestao_melhoria: '', prompt_sugerido: '',
+  });
+  ok(reciboLegado.proporcao == null, 'provenanceVerdict aceita veredito legado sem proporção');
+  ok(orientacaoDeTamanho('2048x1152') === 'landscape' && estimateImageCost('medium', '2048x1152').usd === estimateImageCost('medium', 'wide').usd, 'proporção e custo compartilham normalização de tamanho');
 
   const aliasOk = verificarProporcao('wide', { largura: 1600, altura: 900 });
   ok(aliasOk.ok && aliasOk.orientacao_pedida === 'landscape' && aliasOk.proporcao_pedida == null, 'alias wide compara somente orientação');
@@ -111,6 +119,8 @@ async function main(): Promise<void> {
   });
   const resultadoEsgotado = await motorEstritoEsgotado.gerar({ ...briefBase, iteracoes: 0 }, { jobId: 'proporcao-estrita-esgotada' });
   ok(!resultadoEsgotado.verdict.aprovado && !resultadoEsgotado.artifacts[0].verdict.aprovado, 'gate estrito nunca aprova a divergência ao esgotar tentativas');
+  const resultadoSemGeometria = await motorEstritoEsgotado.gerar({ ...briefBase, tamanho: '2K', iteracoes: 0 }, { jobId: 'proporcao-sem-geometria' });
+  ok(resultadoSemGeometria.verdict.avisos?.some((aviso) => aviso.includes('sem geometria verificável')) === true, 'gate estrito inerte emite aviso');
 
   let tentativasFlexiveis = 0;
   const motorFlexivel = criarMotor({

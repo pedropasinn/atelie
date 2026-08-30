@@ -8,6 +8,7 @@
   (rótulo ausente, texto extra não autorizado, ordem obrigatória, texto em cena) com veto que a nota visual não compensa;
 - `texto_extra_permitido`, `largura_final_px` (legibilidade no tamanho de inserção) e `ordem_obrigatoria` no brief;
 - recibo de proveniência ganha `conteudo` e `visual` por tentativa (campos aditivos);
+- a normalização adiciona defaults ao JSON canônico; por isso o `brief_hash` e a chave de idempotência diferem dos gerados por 0.2.1;
 - motivação: benchmark externo de 30/08 (fig1/fig3 saíram 1024×1536 com `--size landscape`; texto inventado em 3 de 6 figuras).
 
 ## 0.2.1 — 2026-08-29
