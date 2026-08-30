@@ -40,6 +40,19 @@ async function main(): Promise<void> {
   );
   ok(repeticaoLiteral.ok && repeticaoLiteral.extras.length === 0 && repeticaoLiteral.repeticoes['3 repetições'] === 2, 'string permitida repetida não vira extra e é auditável');
 
+  const permitidasCasoReal = ['UM TESTE JUSTO', 'TAREFA CONGELADA', 'MESMA CÉLULA', 'modelo', 'cache', 'BRAÇO A', 'BRAÇO B', 'VEREDITO', '3 repetições'];
+  const casoRealBracos = compararConteudo(permitidasCasoReal, permitidasCasoReal, { modo: 'explicacao' });
+  ok(casoRealBracos.ok && casoRealBracos.ortografia.length === 0, 'matches exatos de BRAÇO A e BRAÇO B não divergem entre si');
+
+  const contraprovaBracos = compararConteudo(['BRAÇO B', 'BRAÇÓ A'], ['BRAÇO A', 'BRAÇO B'], { modo: 'explicacao' });
+  ok(
+    !contraprovaBracos.ok
+      && contraprovaBracos.ortografia.length === 1
+      && contraprovaBracos.ortografia[0]?.esperado === 'BRAÇO A'
+      && contraprovaBracos.ortografia[0]?.transcrito === 'BRAÇÓ A',
+    'match exato de BRAÇO B é consumido e só o acento errado de BRAÇO A diverge',
+  );
+
   const permitidaContida = compararConteudo(
     ['DO DADO AO PAINEL', 'FONTES', 'QUALIDADE', 'PAINEL', 'ERP', 'CRM', 'validação', 'conselho'],
     ['DO DADO AO PAINEL', 'FONTES', 'QUALIDADE', 'PAINEL', 'ERP', 'CRM', 'validação', 'conselho'],

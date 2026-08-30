@@ -158,6 +158,26 @@ function formaOrtografica(texto: string): string {
   return texto.normalize('NFC').toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ').trim();
 }
 
+function localizarPermitidasExatas(tokens: TokenConteudo[], permitida: string): Ocorrencia[] {
+  const permitidaTokens = tokenizar(permitida, -1);
+  if (!permitidaTokens.length) return [];
+  const formaEsperada = formaOrtografica(permitidaTokens.map((token) => token.original).join(' '));
+  const ocorrencias: Ocorrencia[] = [];
+  for (let inicio = 0; inicio + permitidaTokens.length <= tokens.length; inicio++) {
+    const trechoTokens = tokens.slice(inicio, inicio + permitidaTokens.length);
+    const trecho = formaOrtografica(trechoTokens.map((token) => token.original).join(' '));
+    if (trecho === formaEsperada) {
+      ocorrencias.push({
+        inicio: trechoTokens[0].entrada,
+        fim: trechoTokens[trechoTokens.length - 1].entrada,
+        offset: trechoTokens[0].indiceNaEntrada,
+        tokens: trechoTokens,
+      });
+    }
+  }
+  return ocorrencias;
+}
+
 function unicos(strings: string[]): string[] {
   return [...new Set(strings)];
 }
@@ -182,14 +202,18 @@ export function compararConteudo(
     normalizada: tokenizar(original, -1).map((token) => token.normalizado).join(' '),
     ortografica: tokenizar(original, -1).map((token) => token.original).join(' '),
   }));
-  const ocorrencias = new Map<string, Ocorrencia[]>();
-
-  for (const permitida of allowlist) {
-    ocorrencias.set(permitida.normalizada, localizarPermitidas(tokens, permitida.normalizada));
-  }
+  const ocorrenciasExatas = allowlist.map((permitida) => localizarPermitidasExatas(tokens, permitida.ortografica));
+  const tokensConsumidosPorExatas = new Set(
+    ocorrenciasExatas.flatMap((lista) => lista.flatMap((ocorrencia) => ocorrencia.tokens)),
+  );
+  const ocorrencias = allowlist.map((permitida, index) => {
+    if (ocorrenciasExatas[index].length) return ocorrenciasExatas[index];
+    return localizarPermitidas(tokens, permitida.normalizada)
+      .filter((ocorrencia) => ocorrencia.tokens.every((token) => !tokensConsumidosPorExatas.has(token)));
+  });
 
   const tokensCobertos = new Set<TokenConteudo>();
-  for (const lista of ocorrencias.values()) {
+  for (const lista of ocorrencias) {
     for (const ocorrencia of lista) {
       for (const token of ocorrencia.tokens) tokensCobertos.add(token);
     }
@@ -222,14 +246,15 @@ export function compararConteudo(
   }
 
   const faltantes = allowlist
-    .filter((permitida) => !ocorrencias.get(permitida.normalizada)?.length)
+    .filter((_permitida, index) => !ocorrencias[index].length)
     .map((permitida) => permitida.original);
-  const repeticoes = Object.fromEntries(allowlist.flatMap((permitida) => {
-    const quantidade = ocorrencias.get(permitida.normalizada)?.length ?? 0;
+  const repeticoes = Object.fromEntries(allowlist.flatMap((permitida, index) => {
+    const quantidade = ocorrencias[index].length;
     return quantidade > 1 ? [[permitida.original, quantidade] as const] : [];
   }));
-  const ortografia = allowlist.flatMap((permitida): DivergenciaOrtografica[] => {
-    return (ocorrencias.get(permitida.normalizada) ?? []).flatMap((ocorrencia) => {
+  const ortografia = allowlist.flatMap((permitida, index): DivergenciaOrtografica[] => {
+    if (ocorrenciasExatas[index].length) return [];
+    return ocorrencias[index].flatMap((ocorrencia) => {
       const transcrito = ocorrencia.tokens.map((token) => token.original).join(' ');
       return formaOrtografica(transcrito) === formaOrtografica(permitida.ortografica)
         ? []
@@ -239,7 +264,11 @@ export function compararConteudo(
 
   const ordemIncorreta = (opts.ordensObrigatorias ?? []).filter((ordem) => {
     const posicoes = ordem
-      .map((item) => ocorrencias.get(tokenizar(item, -1).map((token) => token.normalizado).join(' '))?.[0])
+      .map((item) => {
+        const formaItem = formaOrtografica(tokenizar(item, -1).map((token) => token.original).join(' '));
+        const index = allowlist.findIndex((permitida) => formaOrtografica(permitida.ortografica) === formaItem);
+        return index >= 0 ? ocorrencias[index][0] : undefined;
+      })
       .filter((posicao): posicao is Ocorrencia => posicao != null);
     return posicoes.length === ordem.length && posicoes.some((posicao, index) => index > 0 && (
       posicao.inicio < posicoes[index - 1].inicio
