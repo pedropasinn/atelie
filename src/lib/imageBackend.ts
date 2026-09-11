@@ -96,6 +96,13 @@ export async function generate(
   if (job.mode !== 'transparent') {
     args.push('--format', 'png');
   }
+  // O default do wrapper (`gpt-5.4`) deixou de existir na conta ChatGPT e devolve
+  // HTTP 400. `ATELIE_GEN_MODEL` fixa o modelo condutor do caminho Codex/responses.
+  // `transparent generate` não aceita `-m`.
+  const genModel = process.env.ATELIE_GEN_MODEL?.trim();
+  if (genModel && job.mode !== 'transparent') {
+    args.push('-m', genModel);
+  }
 
   const handle = run(nodeBin(), args, {
     signal,
